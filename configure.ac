@@ -2,7 +2,7 @@ AC_PREREQ([2.58])
 dnl PLEASE remove the nano when doing a release
 AC_INIT(gst-rtmp,0.1.0.1)
 
-AS_NANO([GSS_UNRELEASED=no],[GSS_UNRELEASED=yes])
+AS_NANO([GST_RTMP_UNRELEASED=no],[GST_RTMP_UNRELEASED=yes])
 
 AC_CANONICAL_HOST([])
 AM_INIT_AUTOMAKE(1.6)
@@ -17,8 +17,8 @@ dnl - library source changed -> increment REVISION
 dnl - interfaces added/removed/changed -> increment CURRENT, REVISION = 0
 dnl - interfaces added -> increment AGE
 dnl - interfaces removed -> AGE = 0
-GSS_LIBVERSION="0:0:0"
-AC_SUBST(GSS_LIBVERSION)
+GST_RTMP_LIBVERSION="0:0:0"
+AC_SUBST(GST_RTMP_LIBVERSION)
 
 AC_LIBTOOL_WIN32_DLL
 AC_PROG_LIBTOOL
@@ -31,7 +31,7 @@ LT_PATH_NM
 dnl allow for different autotools
 AS_AUTOTOOLS_ALTERNATE
 
-AC_CONFIG_SRCDIR([grtmp/grtmp.c])
+AC_CONFIG_SRCDIR([grtmp/rtmpserver.c])
 
 AC_CONFIG_MACRO_DIR([m4])
 ACLOCAL_AMFLAGS="-I m4 $ACLOCAL_AMFLAGS"
@@ -45,10 +45,10 @@ dnl the version check needs to stay here because autopoint greps for it
 AC_CHECK_LIBM
 AC_SUBST(LIBM)
 
-AS_COMPILER_FLAG(-Wall, GSS_CFLAGS="$GSS_CFLAGS -Wall")
-if test "x$GSS_UNRELEASED" = "xyes"
+AS_COMPILER_FLAG(-Wall, GST_RTMP_CFLAGS="$GST_RTMP_CFLAGS -Wall")
+if test "x$GST_RTMP_UNRELEASED" = "xyes"
 then
-  AS_COMPILER_FLAG(-Werror, GSS_CFLAGS="$GSS_CFLAGS -Werror")
+  AS_COMPILER_FLAG(-Werror, GST_RTMP_CFLAGS="$GST_RTMP_CFLAGS -Werror")
 fi
 
 #AS_COMPILER_FLAG(-O3, CFLAGS=`echo $CFLAGS | sed s/O2/O3/`)
@@ -57,7 +57,7 @@ fi
 # Enable severe pain
 #AS_COMPILER_FLAGS(COMPANY_CFLAGS,"-Wextra -Wno-missing-field-initializers -Wno-unused-parameter -Wold-style-definition -Wdeclaration-after-statement -Wmissing-declarations -Wmissing-prototypes -Wredundant-decls -Wmissing-noreturn -Wshadow -Wpointer-arith -Wcast-align -Wwrite-strings -Winline -Wformat-nonliteral -Wformat-security -Wswitch-enum -Wswitch-default")
 #COMPANY_CFLAGS="-Wextra -Wno-missing-field-initializers -Wno-unused-parameter -Wold-style-definition -Wdeclaration-after-statement -Wmissing-declarations -Wmissing-prototypes -Wredundant-decls -Wmissing-noreturn -Wshadow -Wpointer-arith -Wcast-align -Wwrite-strings -Winline -Wformat-nonliteral -Wformat-security -Wswitch-enum -Wswitch-default"
-#GSS_CFLAGS="$GSS_CFLAGS $COMPANY_CFLAGS"
+#GST_RTMP_CFLAGS="$GST_RTMP_CFLAGS $COMPANY_CFLAGS"
 
 
 ##################################################
@@ -128,11 +128,11 @@ AC_SUBST(GST_ALL_LDFLAGS)
 
 AM_CONDITIONAL(HAVE_FALSE, false)
 
-GSS_CFLAGS="$GSS_CFLAGS -I\$(top_srcdir)"
-AC_SUBST(GSS_CFLAGS)
+GST_RTMP_CFLAGS="$GST_RTMP_CFLAGS -I\$(top_srcdir)"
+AC_SUBST(GST_RTMP_CFLAGS)
 
-GSS_LIBS="\$(top_builddir)/gst-rtmp/libgss-$GST_API_VERSION.la"
-AC_SUBST(GSS_LIBS)
+GST_RTMP_LIBS="\$(top_builddir)/gst-rtmp/libgss-$GST_API_VERSION.la"
+AC_SUBST(GST_RTMP_LIBS)
 
 
 AS_HOST_DEFINES()
