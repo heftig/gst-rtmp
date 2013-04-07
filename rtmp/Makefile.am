@@ -21,4 +21,6 @@ sources = \
 	rtmpclient.c \
 	rtmpclient.h \
 	rtmpconnection.c \
-	rtmpconnection.h
+	rtmpconnection.h \
+	rtmppacket.c \
+	rtmppacket.h

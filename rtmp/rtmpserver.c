@@ -118,5 +118,3 @@ gst_rtmp_server_finalize (GObject * object)
 
   G_OBJECT_CLASS (gst_rtmp_server_parent_class)->finalize (object);
 }
-
-

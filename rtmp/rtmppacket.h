@@ -17,33 +17,39 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef _GST_RTMP_SERVER_H_
-#define _GST_RTMP_SERVER_H_
+#ifndef _GST_RTMP_PACKET_H_
+#define _GST_RTMP_PACKET_H_
 
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_RTMP_SERVER   (gst_rtmp_server_get_type())
-#define GST_RTMP_SERVER(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_RTMP_SERVER,GstRtmpServer))
-#define GST_RTMP_SERVER_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_RTMP_SERVER,GstRtmpServerClass))
-#define GST_IS_RTMP_SERVER(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_RTMP_SERVER))
-#define GST_IS_RTMP_SERVER_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_RTMP_SERVER))
+#define GST_TYPE_RTMP_PACKET   (gst_rtmp_packet_get_type())
+#define GST_RTMP_PACKET(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_RTMP_PACKET,GstRtmpPacket))
+#define GST_RTMP_PACKET_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_RTMP_PACKET,GstRtmpPacketClass))
+#define GST_IS_RTMP_PACKET(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_RTMP_PACKET))
+#define GST_IS_RTMP_PACKET_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_RTMP_PACKET))
 
-typedef struct _GstRtmpServer GstRtmpServer;
-typedef struct _GstRtmpServerClass GstRtmpServerClass;
+typedef struct _GstRtmpPacket GstRtmpPacket;
+typedef struct _GstRtmpPacketClass GstRtmpPacketClass;
 
-struct _GstRtmpServer
+struct _GstRtmpPacket
 {
   GObject object;
 
+  char *request_data;
+  gsize request_length;
+
+  char *response_data;
+  gsize response_length;
+
 };
 
-struct _GstRtmpServerClass
+struct _GstRtmpPacketClass
 {
   GObjectClass object_class;
 };
 
-GType gst_rtmp_server_get_type (void);
+GType gst_rtmp_packet_get_type (void);
 
 G_END_DECLS
 

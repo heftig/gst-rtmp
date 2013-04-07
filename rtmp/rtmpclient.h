@@ -1,5 +1,5 @@
-/* GStreamer
- * Copyright (C) 2013 FIXME <fixme@example.com>
+/* GStreamer RTMP Library
+ * Copyright (C) 2013 David Schleef <ds@schleef.org>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,6 +20,7 @@
 #ifndef _GST_RTMP_CLIENT_H_
 #define _GST_RTMP_CLIENT_H_
 
+#include <rtmp/rtmppacket.h>
 
 G_BEGIN_DECLS
 
@@ -32,18 +33,42 @@ G_BEGIN_DECLS
 typedef struct _GstRtmpClient GstRtmpClient;
 typedef struct _GstRtmpClientClass GstRtmpClientClass;
 
+typedef void (*GstRtmpClientCallback) (GstRtmpClient *client,
+    GstRtmpPacket *packet, gpointer user_data);
+
 struct _GstRtmpClient
 {
-  GObject base_rtmpclient;
+  GObject object;
+
+  /* properties */
+  char *server_host;
+
+
+  /* private */
+  GMutex lock;
+  GCond cond;
+  GMainContext *context;
 
 };
 
 struct _GstRtmpClientClass
 {
-  GObjectClass base_rtmpclient_class;
+  GObjectClass object_class;
+
+  /* signals */
+  void (*got_packet) (GstRtmpClient *client, GstRtmpPacket *packet);
+
 };
 
 GType gst_rtmp_client_get_type (void);
+
+GstRtmpClient *gst_rtmp_client_new (void);
+void gst_rtmp_client_set_url (GstRtmpClient *client, const char *url);
+
+void gst_rtmp_client_queue_packet (GstRtmpClient *client,
+    GstRtmpPacket *packet, GstRtmpClientCallback callback,
+    gpointer user_data);
+
 
 G_END_DECLS
 

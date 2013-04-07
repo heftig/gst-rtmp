@@ -120,5 +120,3 @@ gst_rtmp_client_finalize (GObject * object)
 
   G_OBJECT_CLASS (gst_rtmp_client_parent_class)->finalize (object);
 }
-
-
