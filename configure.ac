@@ -31,7 +31,7 @@ LT_PATH_NM
 dnl allow for different autotools
 AS_AUTOTOOLS_ALTERNATE
 
-AC_CONFIG_SRCDIR([grtmp/rtmpserver.c])
+AC_CONFIG_SRCDIR([rtmp/rtmpserver.c])
 
 AC_CONFIG_MACRO_DIR([m4])
 ACLOCAL_AMFLAGS="-I m4 $ACLOCAL_AMFLAGS"
@@ -140,7 +140,7 @@ AS_HOST_DEFINES()
 AC_CONFIG_FILES([
 Makefile 
 doc/Makefile
-grtmp/Makefile
+rtmp/Makefile
 pkgconfig/Makefile
 pkgconfig/gst-rtmp-uninstalled.pc
 pkgconfig/gst-rtmp.pc

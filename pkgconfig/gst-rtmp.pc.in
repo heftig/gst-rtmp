@@ -9,5 +9,5 @@ Name: gst-rtmp-@GST_API_VERSION@
 Description: GStreamer RTMP Library
 Version: @VERSION@
 Requires: libsoup-2.4
-Libs: -L${libdir} -lgrtmp-@GST_API_VERSION@
+Libs: -L${libdir} -lgst-rtmp-@GST_API_VERSION@
 Cflags: -I${includedir}
