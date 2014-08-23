@@ -23,6 +23,7 @@
 
 #include <gst/gst.h>
 #include "rtmpserver.h"
+#include "rtmpserverconnection.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_rtmp_server_debug_category);
 #define GST_CAT_DEFAULT gst_rtmp_server_debug_category
@@ -35,6 +36,9 @@ static void gst_rtmp_server_get_property (GObject * object,
     guint property_id, GValue * value, GParamSpec * pspec);
 static void gst_rtmp_server_dispose (GObject * object);
 static void gst_rtmp_server_finalize (GObject * object);
+static gboolean gst_rtmp_server_incoming (GSocketService * service,
+    GSocketConnection * connection, GObject * source_object,
+    gpointer user_data);
 
 
 enum
@@ -63,6 +67,7 @@ gst_rtmp_server_class_init (GstRtmpServerClass * klass)
 static void
 gst_rtmp_server_init (GstRtmpServer * rtmpserver)
 {
+  rtmpserver->port = 11935;
 }
 
 void
@@ -117,4 +122,54 @@ gst_rtmp_server_finalize (GObject * object)
   /* clean up object here */
 
   G_OBJECT_CLASS (gst_rtmp_server_parent_class)->finalize (object);
+}
+
+GstRtmpServer *
+gst_rtmp_server_new (void)
+{
+  return g_object_new (GST_TYPE_RTMP_SERVER, NULL);
+}
+
+void
+gst_rtmp_server_start (GstRtmpServer * rtmpserver)
+{
+  gboolean ret;
+  GError *error = NULL;
+
+  if (rtmpserver->socket_service) {
+    GST_ERROR ("rtmp server already started");
+    return;
+  }
+
+  rtmpserver->socket_service = g_socket_service_new ();
+
+  ret =
+      g_socket_listener_add_inet_port (G_SOCKET_LISTENER (rtmpserver->
+          socket_service), rtmpserver->port, NULL, &error);
+  if (!ret) {
+    GST_ERROR ("failed to add address: %s", error->message);
+    g_object_unref (rtmpserver->socket_service);
+    rtmpserver->socket_service = NULL;
+    return;
+  }
+
+  g_signal_connect (rtmpserver->socket_service, "incoming",
+      G_CALLBACK (gst_rtmp_server_incoming), rtmpserver);
+}
+
+static gboolean
+gst_rtmp_server_incoming (GSocketService * service,
+    GSocketConnection * connection, GObject * source_object, gpointer user_data)
+{
+  GstRtmpServer *rtmpserver = GST_RTMP_SERVER (user_data);
+  GstRtmpServerConnection *server_connection;
+
+  GST_ERROR ("client connected");
+
+  g_object_ref (connection);
+  server_connection = gst_rtmp_server_connection_new (connection);
+  (void) server_connection;
+  (void) rtmpserver;
+
+  return TRUE;
 }

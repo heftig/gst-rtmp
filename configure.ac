@@ -105,7 +105,7 @@ if test "$HAVE_GLIB" != yes ; then
   exit 1
 fi
 
-PKG_CHECK_MODULES(GST, gstreamer-$GST_API_VERSION gstreamer-base-$GST_API_VERSION gstreamer-video-$GST_API_VERSION gstreamer-audio-$GST_API_VERSION,
+PKG_CHECK_MODULES(GST, gstreamer-$GST_API_VERSION gstreamer-base-$GST_API_VERSION gstreamer-video-$GST_API_VERSION gstreamer-audio-$GST_API_VERSION gio-2.0,
     HAVE_GST=yes, HAVE_GST=no)
 if test "$HAVE_GST" != yes ; then
   echo GStreamer and gst-plugns-base are needed to build

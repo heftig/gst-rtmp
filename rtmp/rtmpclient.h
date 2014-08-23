@@ -20,7 +20,8 @@
 #ifndef _GST_RTMP_CLIENT_H_
 #define _GST_RTMP_CLIENT_H_
 
-#include <rtmp/rtmppacket.h>
+#include <rtmp/rtmpmessage.h>
+#include <rtmp/rtmpchunk.h>
 
 G_BEGIN_DECLS
 
@@ -33,21 +34,41 @@ G_BEGIN_DECLS
 typedef struct _GstRtmpClient GstRtmpClient;
 typedef struct _GstRtmpClientClass GstRtmpClientClass;
 
-typedef void (*GstRtmpClientCallback) (GstRtmpClient *client,
-    GstRtmpPacket *packet, gpointer user_data);
+typedef void (*GstRtmpClientMessageCallback) (GstRtmpClient *client,
+    GstRtmpMessage *message, gpointer user_data);
+typedef void (*GstRtmpClientChunkCallback) (GstRtmpClient *client,
+    GstRtmpChunk *chunk, gpointer user_data);
+
+#define GST_RTMP_ERROR g_quark_from_static_string ("GstRtmpError")
+
+enum {
+  GST_RTMP_ERROR_TOO_LAZY = 0
+};
+
+typedef enum {
+  GST_RTMP_CLIENT_STATE_NEW,
+  GST_RTMP_CLIENT_STATE_CONNECTING,
+  GST_RTMP_CLIENT_STATE_CONNECTED,
+} GstRtmpClientState;
+
 
 struct _GstRtmpClient
 {
   GObject object;
 
   /* properties */
-  char *server_host;
-
+  char *host;
+  int port;
+  char *stream;
 
   /* private */
+  GstRtmpClientState state;
   GMutex lock;
   GCond cond;
   GMainContext *context;
+
+  GSocketClient *socket_client;
+  GSocketConnection *connection;
 
 };
 
@@ -56,7 +77,8 @@ struct _GstRtmpClientClass
   GObjectClass object_class;
 
   /* signals */
-  void (*got_packet) (GstRtmpClient *client, GstRtmpPacket *packet);
+  void (*got_chunk) (GstRtmpClient *client, GstRtmpChunk *chunk);
+  void (*got_message) (GstRtmpClient *client, GstRtmpMessage *message);
 
 };
 
@@ -65,8 +87,17 @@ GType gst_rtmp_client_get_type (void);
 GstRtmpClient *gst_rtmp_client_new (void);
 void gst_rtmp_client_set_url (GstRtmpClient *client, const char *url);
 
-void gst_rtmp_client_queue_packet (GstRtmpClient *client,
-    GstRtmpPacket *packet, GstRtmpClientCallback callback,
+void gst_rtmp_client_connect_async (GstRtmpClient *client,
+    GCancellable *cancellable, GAsyncReadyCallback callback,
+    gpointer user_data);
+gboolean gst_rtmp_client_connect_finish (GstRtmpClient *client,
+    GAsyncResult *result, GError **error);
+
+void gst_rtmp_client_queue_message (GstRtmpClient *client,
+    GstRtmpMessage *message, GstRtmpClientMessageCallback callback,
+    gpointer user_data);
+void gst_rtmp_client_queue_chunk (GstRtmpClient *client,
+    GstRtmpChunk *Chunk, GstRtmpClientChunkCallback callback,
     gpointer user_data);
 
 

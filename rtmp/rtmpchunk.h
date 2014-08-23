@@ -17,43 +17,40 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef _GST_RTMP_SERVER_H_
-#define _GST_RTMP_SERVER_H_
+#ifndef _GST_RTMP_CHUNK_H_
+#define _GST_RTMP_CHUNK_H_
 
-#include <gio/gio.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_RTMP_SERVER   (gst_rtmp_server_get_type())
-#define GST_RTMP_SERVER(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_RTMP_SERVER,GstRtmpServer))
-#define GST_RTMP_SERVER_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_RTMP_SERVER,GstRtmpServerClass))
-#define GST_IS_RTMP_SERVER(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_RTMP_SERVER))
-#define GST_IS_RTMP_SERVER_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_RTMP_SERVER))
+#define GST_TYPE_RTMP_CHUNK   (gst_rtmp_chunk_get_type())
+#define GST_RTMP_CHUNK(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_RTMP_CHUNK,GstRtmpChunk))
+#define GST_RTMP_CHUNK_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_RTMP_CHUNK,GstRtmpChunkClass))
+#define GST_IS_RTMP_CHUNK(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_RTMP_CHUNK))
+#define GST_IS_RTMP_CHUNK_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_RTMP_CHUNK))
 
-typedef struct _GstRtmpServer GstRtmpServer;
-typedef struct _GstRtmpServerClass GstRtmpServerClass;
+typedef struct _GstRtmpChunk GstRtmpChunk;
+typedef struct _GstRtmpChunkClass GstRtmpChunkClass;
 
-struct _GstRtmpServer
+struct _GstRtmpChunk
 {
   GObject object;
 
-  /* properties */
-  int port;
-
-  /* private */
-  GSocketService *socket_service;
+  guint32 timestamp;
+  int type_id;
+  guint32 chunk_stream_id;
+  guint32 stream_id;
+  int length;
+  guint8 *data;
 
 };
 
-struct _GstRtmpServerClass
+struct _GstRtmpChunkClass
 {
   GObjectClass object_class;
 };
 
-GType gst_rtmp_server_get_type (void);
-
-GstRtmpServer *gst_rtmp_server_new (void);
-void gst_rtmp_server_start (GstRtmpServer * rtmpserver);
+GType gst_rtmp_chunk_get_type (void);
 
 G_END_DECLS
 
