@@ -29,7 +29,5 @@ sources = \
 	rtmpchunk.h \
 	rtmpserver.c \
 	rtmpserver.h \
-	rtmpserverconnection.c \
-	rtmpserverconnection.h \
 	rtmpstream.c \
 	rtmpstream.h

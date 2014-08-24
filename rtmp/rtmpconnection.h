@@ -20,6 +20,8 @@
 #ifndef _GST_RTMP_CONNECTION_H_
 #define _GST_RTMP_CONNECTION_H_
 
+#include <gio/gio.h>
+#include <rtmp/rtmpchunk.h>
 
 G_BEGIN_DECLS
 
@@ -36,14 +38,27 @@ struct _GstRtmpConnection
 {
   GObject object;
 
+  /* private */
+  GSocketConnection *connection;
+  GSocketConnection *proxy_connection;
+  GCancellable *cancellable;
+  int state;
+  GSocketClient *socket_client;
 };
 
 struct _GstRtmpConnectionClass
 {
   GObjectClass object_class;
+
+  /* signals */
+  void (*got_chunk) (GstRtmpConnection *connection,
+      GstRtmpChunk *chunk);
 };
 
 GType gst_rtmp_connection_get_type (void);
+
+GstRtmpConnection *gst_rtmp_connection_new (
+    GSocketConnection *connection);
 
 G_END_DECLS
 

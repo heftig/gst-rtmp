@@ -29,10 +29,10 @@
 #define GETTEXT_PACKAGE NULL
 
 static void
-add_connection (GstRtmpServer * server, GstRtmpServerConnection * connection,
+add_connection (GstRtmpServer * server, GstRtmpConnection * connection,
     gpointer user_data);
 static void
-got_chunk (GstRtmpServerConnection * connection, GstRtmpChunk * chunk,
+got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
 static void dump_data (GBytes * bytes);
 
@@ -74,7 +74,7 @@ main (int argc, char *argv[])
 }
 
 static void
-add_connection (GstRtmpServer * server, GstRtmpServerConnection * connection,
+add_connection (GstRtmpServer * server, GstRtmpConnection * connection,
     gpointer user_data)
 {
   GST_ERROR ("new connection");
@@ -83,7 +83,7 @@ add_connection (GstRtmpServer * server, GstRtmpServerConnection * connection,
 }
 
 static void
-got_chunk (GstRtmpServerConnection * connection, GstRtmpChunk * chunk,
+got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data)
 {
   GBytes *bytes;

@@ -23,6 +23,10 @@
 
 #include <gst/gst.h>
 #include "rtmpconnection.h"
+#include "rtmpchunk.h"
+#include "amf.h"
+
+#include <string.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_rtmp_connection_debug_category);
 #define GST_CAT_DEFAULT gst_rtmp_connection_debug_category
@@ -36,6 +40,8 @@ static void gst_rtmp_connection_get_property (GObject * object,
 static void gst_rtmp_connection_dispose (GObject * object);
 static void gst_rtmp_connection_finalize (GObject * object);
 
+static void proxy_connect (GstRtmpConnection * sc);
+static void gst_rtmp_connection_handshake1 (GstRtmpConnection * sc);
 
 enum
 {
@@ -44,7 +50,8 @@ enum
 
 /* class initialization */
 
-G_DEFINE_TYPE_WITH_CODE (GstRtmpConnection, gst_rtmp_connection, G_TYPE_OBJECT,
+G_DEFINE_TYPE_WITH_CODE (GstRtmpConnection, gst_rtmp_connection,
+    G_TYPE_OBJECT,
     GST_DEBUG_CATEGORY_INIT (gst_rtmp_connection_debug_category,
         "rtmpconnection", 0, "debug category for GstRtmpConnection class"));
 
@@ -58,11 +65,16 @@ gst_rtmp_connection_class_init (GstRtmpConnectionClass * klass)
   gobject_class->dispose = gst_rtmp_connection_dispose;
   gobject_class->finalize = gst_rtmp_connection_finalize;
 
+  g_signal_new ("got-chunk", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpConnectionClass,
+          got_chunk), NULL, NULL, g_cclosure_marshal_generic,
+      G_TYPE_NONE, 1, GST_TYPE_RTMP_CHUNK);
 }
 
 static void
 gst_rtmp_connection_init (GstRtmpConnection * rtmpconnection)
 {
+  rtmpconnection->cancellable = g_cancellable_new ();
 }
 
 void
@@ -117,4 +129,387 @@ gst_rtmp_connection_finalize (GObject * object)
   /* clean up object here */
 
   G_OBJECT_CLASS (gst_rtmp_connection_parent_class)->finalize (object);
+}
+
+GstRtmpConnection *
+gst_rtmp_connection_new (GSocketConnection * connection)
+{
+  GstRtmpConnection *sc;
+
+  sc = g_object_new (GST_TYPE_RTMP_CONNECTION, NULL);
+  sc->connection = connection;
+
+  //proxy_connect (sc);
+  //gst_rtmp_connection_read_chunk (sc);
+  gst_rtmp_connection_handshake1 (sc);
+
+  return sc;
+}
+
+typedef struct _ChunkRead ChunkRead;
+struct _ChunkRead
+{
+  gpointer data;
+  gsize alloc_size;
+  gsize size;
+  GstRtmpConnection *connection;
+};
+
+
+static void proxy_connect (GstRtmpConnection * sc);
+static void proxy_connect_done (GObject * obj, GAsyncResult * res,
+    gpointer user_data);
+static void gst_rtmp_connection_read_chunk (GstRtmpConnection * sc);
+static void gst_rtmp_connection_read_chunk_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data);
+static void proxy_write_chunk (GstRtmpConnection * sc, ChunkRead * chunk);
+static void proxy_write_done (GObject * obj, GAsyncResult * res,
+    gpointer user_data);
+static void proxy_read_chunk (GstRtmpConnection * sc);
+static void proxy_read_done (GObject * obj, GAsyncResult * res,
+    gpointer user_data);
+static void gst_rtmp_connection_write_chunk (GstRtmpConnection *
+    sc, ChunkRead * chunk);
+static void gst_rtmp_connection_write_chunk_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data);
+static void gst_rtmp_connection_handshake1 (GstRtmpConnection * sc);
+static void gst_rtmp_connection_handshake1_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data);
+static void gst_rtmp_connection_handshake2 (GstRtmpConnection * sc,
+    GBytes * bytes);
+static void gst_rtmp_connection_handshake2_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data);
+static void gst_rtmp_connection_handshake3 (GstRtmpConnection * sc);
+static void gst_rtmp_connection_handshake3_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data);
+
+
+static void
+proxy_connect (GstRtmpConnection * sc)
+{
+  GSocketConnectable *addr;
+
+  GST_ERROR ("proxy_connect");
+
+  addr = g_network_address_new ("localhost", 1935);
+
+  sc->socket_client = g_socket_client_new ();
+  g_socket_client_connect_async (sc->socket_client, addr,
+      sc->cancellable, proxy_connect_done, sc);
+}
+
+static void
+proxy_connect_done (GObject * obj, GAsyncResult * res, gpointer user_data)
+{
+  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
+  GError *error = NULL;
+
+  GST_ERROR ("proxy_connect_done");
+
+  sc->proxy_connection = g_socket_client_connect_finish (sc->socket_client,
+      res, &error);
+  if (sc->proxy_connection == NULL) {
+    GST_ERROR ("connection error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+
+  gst_rtmp_connection_read_chunk (sc);
+}
+
+static void
+gst_rtmp_connection_read_chunk (GstRtmpConnection * sc)
+{
+  GInputStream *is;
+
+  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
+
+  g_input_stream_read_bytes_async (is, 4096,
+      G_PRIORITY_DEFAULT, sc->cancellable,
+      gst_rtmp_connection_read_chunk_done, sc);
+}
+
+G_GNUC_UNUSED static void
+parse_message (guint8 * data, int size)
+{
+  int offset;
+  int bytes_read;
+  GstAmfNode *node;
+
+  offset = 4;
+
+  node = gst_amf_node_new_parse ((const char *) (data + offset),
+      size - offset, &bytes_read);
+  offset += bytes_read;
+  g_print ("bytes_read: %d\n", bytes_read);
+  if (node)
+    gst_amf_node_free (node);
+
+  node = gst_amf_node_new_parse ((const char *) (data + offset),
+      size - offset, &bytes_read);
+  offset += bytes_read;
+  g_print ("bytes_read: %d\n", bytes_read);
+  if (node)
+    gst_amf_node_free (node);
+
+  node = gst_amf_node_new_parse ((const char *) (data + offset),
+      size - offset, &bytes_read);
+  offset += bytes_read;
+  g_print ("bytes_read: %d\n", bytes_read);
+  if (node)
+    gst_amf_node_free (node);
+
+}
+
+static void
+gst_rtmp_connection_read_chunk_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data)
+{
+  GInputStream *is = G_INPUT_STREAM (obj);
+  GstRtmpConnection *connection = GST_RTMP_CONNECTION (user_data);
+  GstRtmpChunk *chunk;
+  GError *error = NULL;
+  gsize chunk_size;
+  GBytes *bytes;
+
+  GST_ERROR ("gst_rtmp_connection_read_chunk_done");
+
+  bytes = g_input_stream_read_bytes_finish (is, res, &error);
+  if (bytes == NULL) {
+    GST_ERROR ("read error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  GST_ERROR ("read %" G_GSSIZE_FORMAT " bytes", g_bytes_get_size (bytes));
+
+  chunk = gst_rtmp_chunk_new_parse (bytes, &chunk_size);
+
+  if (chunk) {
+    g_signal_emit_by_name (connection, "got-chunk", chunk);
+
+    g_object_unref (chunk);
+  }
+}
+
+G_GNUC_UNUSED static void
+proxy_write_chunk (GstRtmpConnection * sc, ChunkRead * chunk)
+{
+  GOutputStream *os;
+
+  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->proxy_connection));
+
+  g_output_stream_write_async (os, chunk->data, chunk->size,
+      G_PRIORITY_DEFAULT, sc->cancellable, proxy_write_done, chunk);
+}
+
+static void
+proxy_write_done (GObject * obj, GAsyncResult * res, gpointer user_data)
+{
+  GOutputStream *os = G_OUTPUT_STREAM (obj);
+  ChunkRead *chunk = (ChunkRead *) user_data;
+  GError *error = NULL;
+  gssize ret;
+
+  GST_ERROR ("proxy_write_done");
+
+  ret = g_output_stream_write_finish (os, res, &error);
+  if (ret < 0) {
+    GST_ERROR ("write error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  GST_ERROR ("proxy write %" G_GSSIZE_FORMAT " bytes", ret);
+
+  proxy_read_chunk (chunk->connection);
+
+  g_free (chunk->data);
+  g_free (chunk);
+}
+
+static void
+proxy_read_chunk (GstRtmpConnection * sc)
+{
+  GInputStream *is;
+  ChunkRead *chunk;
+
+  chunk = g_malloc0 (sizeof (ChunkRead));
+  chunk->alloc_size = 4096;
+  chunk->data = g_malloc (chunk->alloc_size);
+  chunk->connection = sc;
+
+  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->proxy_connection));
+
+  g_input_stream_read_async (is, chunk->data, chunk->alloc_size,
+      G_PRIORITY_DEFAULT, sc->cancellable, proxy_read_done, chunk);
+}
+
+static void
+proxy_read_done (GObject * obj, GAsyncResult * res, gpointer user_data)
+{
+  GInputStream *is = G_INPUT_STREAM (obj);
+  ChunkRead *chunk = (ChunkRead *) user_data;
+  GError *error = NULL;
+  gssize ret;
+
+  GST_ERROR ("proxy_read_done");
+
+  ret = g_input_stream_read_finish (is, res, &error);
+  if (ret < 0) {
+    GST_ERROR ("read error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  GST_ERROR ("proxy read %" G_GSSIZE_FORMAT " bytes", ret);
+  chunk->size = ret;
+
+  gst_rtmp_connection_write_chunk (chunk->connection, chunk);
+}
+
+static void
+gst_rtmp_connection_write_chunk (GstRtmpConnection * sc, ChunkRead * chunk)
+{
+  GOutputStream *os;
+
+  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
+
+  g_output_stream_write_async (os, chunk->data, chunk->size,
+      G_PRIORITY_DEFAULT, sc->cancellable,
+      gst_rtmp_connection_write_chunk_done, chunk);
+}
+
+static void
+gst_rtmp_connection_write_chunk_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data)
+{
+  GOutputStream *os = G_OUTPUT_STREAM (obj);
+  ChunkRead *chunk = (ChunkRead *) user_data;
+  GError *error = NULL;
+  gssize ret;
+
+  GST_ERROR ("gst_rtmp_connection_write_chunk_done");
+
+  ret = g_output_stream_write_finish (os, res, &error);
+  if (ret < 0) {
+    GST_ERROR ("write error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  GST_ERROR ("write %" G_GSSIZE_FORMAT " bytes", ret);
+
+  gst_rtmp_connection_read_chunk (chunk->connection);
+
+  g_free (chunk->data);
+  g_free (chunk);
+}
+
+static void
+gst_rtmp_connection_handshake1 (GstRtmpConnection * sc)
+{
+  GInputStream *is;
+
+  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
+
+  g_input_stream_read_bytes_async (is, 4096,
+      G_PRIORITY_DEFAULT, sc->cancellable,
+      gst_rtmp_connection_handshake1_done, sc);
+}
+
+static void
+gst_rtmp_connection_handshake1_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data)
+{
+  GInputStream *is = G_INPUT_STREAM (obj);
+  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
+  GError *error = NULL;
+  GBytes *bytes;
+
+  GST_ERROR ("gst_rtmp_connection_handshake1_done");
+
+  bytes = g_input_stream_read_bytes_finish (is, res, &error);
+  if (bytes == NULL) {
+    GST_ERROR ("read error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  GST_ERROR ("read %" G_GSSIZE_FORMAT " bytes", g_bytes_get_size (bytes));
+
+  gst_rtmp_connection_handshake2 (sc, bytes);
+}
+
+static void
+gst_rtmp_connection_handshake2 (GstRtmpConnection * sc, GBytes * bytes)
+{
+  GOutputStream *os;
+  guint8 *data;
+  GBytes *out_bytes;
+
+  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
+
+  data = g_malloc (1 + 1536 + 1536);
+  memcpy (data, g_bytes_get_data (bytes, NULL), 1 + 1536);
+  memset (data + 1537, 0, 8);
+  memset (data + 1537 + 8, 0xef, 1528);
+
+  out_bytes = g_bytes_new_take (data, 1 + 1536 + 1536);
+
+  g_output_stream_write_bytes_async (os, out_bytes,
+      G_PRIORITY_DEFAULT, sc->cancellable,
+      gst_rtmp_connection_handshake2_done, sc);
+}
+
+static void
+gst_rtmp_connection_handshake2_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data)
+{
+  GOutputStream *os = G_OUTPUT_STREAM (obj);
+  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
+  GError *error = NULL;
+  gssize ret;
+
+  GST_ERROR ("gst_rtmp_connection_handshake2_done");
+
+  ret = g_output_stream_write_bytes_finish (os, res, &error);
+  if (ret < 1 + 1536 + 1536) {
+    GST_ERROR ("read error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  GST_ERROR ("wrote %" G_GSSIZE_FORMAT " bytes", ret);
+
+  gst_rtmp_connection_handshake3 (sc);
+}
+
+static void
+gst_rtmp_connection_handshake3 (GstRtmpConnection * sc)
+{
+  GInputStream *is;
+
+  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
+
+  g_input_stream_read_bytes_async (is, 1536,
+      G_PRIORITY_DEFAULT, sc->cancellable,
+      gst_rtmp_connection_handshake3_done, sc);
+}
+
+static void
+gst_rtmp_connection_handshake3_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data)
+{
+  GInputStream *is = G_INPUT_STREAM (obj);
+  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
+  GError *error = NULL;
+  GBytes *bytes;
+
+  GST_ERROR ("gst_rtmp_connection_handshake3_done");
+
+  bytes = g_input_stream_read_bytes_finish (is, res, &error);
+  if (bytes == NULL) {
+    GST_ERROR ("read error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  GST_ERROR ("read %" G_GSSIZE_FORMAT " bytes", g_bytes_get_size (bytes));
+
+  gst_rtmp_connection_read_chunk (sc);
+  (void) &proxy_connect;
 }

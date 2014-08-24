@@ -64,11 +64,11 @@ gst_rtmp_server_class_init (GstRtmpServerClass * klass)
   g_signal_new ("add-connection", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpServerClass,
           add_connection), NULL, NULL, g_cclosure_marshal_generic,
-      G_TYPE_NONE, 1, GST_TYPE_RTMP_SERVER_CONNECTION);
+      G_TYPE_NONE, 1, GST_TYPE_RTMP_CONNECTION);
   g_signal_new ("remove-connection", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpServerClass,
           remove_connection), NULL, NULL, g_cclosure_marshal_generic,
-      G_TYPE_NONE, 1, GST_TYPE_RTMP_SERVER_CONNECTION);
+      G_TYPE_NONE, 1, GST_TYPE_RTMP_CONNECTION);
 }
 
 static void
@@ -173,23 +173,24 @@ gst_rtmp_server_start (GstRtmpServer * rtmpserver)
 
 static gboolean
 gst_rtmp_server_incoming (GSocketService * service,
-    GSocketConnection * connection, GObject * source_object, gpointer user_data)
+    GSocketConnection * socket_connection, GObject * source_object,
+    gpointer user_data)
 {
   GstRtmpServer *rtmpserver = GST_RTMP_SERVER (user_data);
-  GstRtmpServerConnection *server_connection;
+  GstRtmpConnection *connection;
 
   GST_ERROR ("client connected");
 
-  g_object_ref (connection);
-  server_connection = gst_rtmp_server_connection_new (connection);
-  gst_rtmp_server_add_connection (rtmpserver, server_connection);
+  g_object_ref (socket_connection);
+  connection = gst_rtmp_connection_new (socket_connection);
+  gst_rtmp_server_add_connection (rtmpserver, connection);
 
   return TRUE;
 }
 
 void
 gst_rtmp_server_add_connection (GstRtmpServer * rtmpserver,
-    GstRtmpServerConnection * connection)
+    GstRtmpConnection * connection)
 {
   rtmpserver->connections = g_list_prepend (rtmpserver->connections,
       connection);
@@ -198,7 +199,7 @@ gst_rtmp_server_add_connection (GstRtmpServer * rtmpserver,
 
 void
 gst_rtmp_server_remove_connection (GstRtmpServer * rtmpserver,
-    GstRtmpServerConnection * connection)
+    GstRtmpConnection * connection)
 {
   rtmpserver->connections = g_list_remove (rtmpserver->connections, connection);
   g_signal_emit_by_name (rtmpserver, "remove-connection", connection);

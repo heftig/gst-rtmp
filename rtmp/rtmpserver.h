@@ -22,7 +22,7 @@
 
 #include <gio/gio.h>
 
-#include <rtmp/rtmpserverconnection.h>
+#include <rtmp/rtmpconnection.h>
 
 G_BEGIN_DECLS
 
@@ -54,9 +54,9 @@ struct _GstRtmpServerClass
 
   /* signals */
   void (*add_connection) (GstRtmpServer *server,
-      GstRtmpServerConnection *connection);
+      GstRtmpConnection *connection);
   void (*remove_connection) (GstRtmpServer *server,
-      GstRtmpServerConnection *connection);
+      GstRtmpConnection *connection);
 };
 
 GType gst_rtmp_server_get_type (void);
@@ -64,9 +64,9 @@ GType gst_rtmp_server_get_type (void);
 GstRtmpServer *gst_rtmp_server_new (void);
 void gst_rtmp_server_start (GstRtmpServer * rtmpserver);
 void gst_rtmp_server_add_connection (GstRtmpServer *rtmpserver,
-    GstRtmpServerConnection *connection);
+    GstRtmpConnection *connection);
 void gst_rtmp_server_remove_connection (GstRtmpServer *rtmpserver,
-    GstRtmpServerConnection *connection);
+    GstRtmpConnection *connection);
 
 G_END_DECLS
 
