@@ -119,3 +119,158 @@ gst_rtmp_chunk_finalize (GObject * object)
 
   G_OBJECT_CLASS (gst_rtmp_chunk_parent_class)->finalize (object);
 }
+
+GstRtmpChunk *
+gst_rtmp_chunk_new (void)
+{
+  return g_object_new (GST_TYPE_RTMP_CHUNK, NULL);
+}
+
+static GstRtmpChunkParseStatus
+chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes)
+{
+  int offset;
+  const guint8 *data;
+  gsize size;
+  int header_fmt;
+
+  if (*needed_bytes)
+    *needed_bytes = 0;
+
+  data = g_bytes_get_data (bytes, &size);
+  if (size < 1)
+    return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+
+  header_fmt = data[0] >> 6;
+  chunk->stream_id = data[0] & 0x3f;
+  offset = 1;
+  if (chunk->stream_id == 0) {
+    if (size < 2)
+      return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+    chunk->stream_id = 64 + data[1];
+    offset = 2;
+  } else if (chunk->stream_id == 1) {
+    if (size < 3)
+      return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+    chunk->stream_id = 64 + data[1] + (data[2] << 8);
+    offset = 3;
+  }
+  if (header_fmt == 0) {
+    if (size < offset + 11)
+      return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+    chunk->timestamp =
+        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+    offset += 3;
+    chunk->message_length =
+        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+    offset += 3;
+    if (chunk->timestamp == 0xffffff) {
+      if (size < offset + 4)
+        return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+      chunk->timestamp = (data[offset] << 24) | (data[offset + 1] << 16) |
+          (data[offset + 2] << 8) | data[offset + 3];
+      offset += 4;
+    }
+    chunk->message_type_id = data[offset + 6];
+    offset += 1;
+
+    /* 4 byte something here */
+    offset += 4;
+  } else if (header_fmt == 1) {
+    if (size < offset + 7)
+      return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+    GST_ERROR ("unimplemented: need previous chunk");
+    chunk->timestamp =
+        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+    offset += 3;
+    chunk->message_length =
+        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+    offset += 3;
+  } else if (header_fmt == 2) {
+    if (size < offset + 3)
+      return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+    chunk->timestamp = 0;
+    GST_ERROR ("unimplemented: need previous chunk");
+    return GST_RTMP_CHUNK_PARSE_ERROR;
+  } else {
+    chunk->timestamp = 0;
+    GST_ERROR ("unimplemented: need previous chunk");
+    return GST_RTMP_CHUNK_PARSE_ERROR;
+  }
+
+  if (needed_bytes)
+    *needed_bytes = offset + chunk->message_length;
+  if (size < offset + chunk->message_length)
+    return GST_RTMP_CHUNK_PARSE_NEED_BYTES;
+
+  chunk->payload =
+      g_bytes_new_from_bytes (bytes, offset, chunk->message_length);
+  return GST_RTMP_CHUNK_PARSE_OK;
+}
+
+GstRtmpChunkParseStatus
+gst_rtmp_chunk_can_parse (GBytes * bytes, gsize * chunk_size)
+{
+  GstRtmpChunk *chunk;
+  GstRtmpChunkParseStatus status;
+
+  chunk = gst_rtmp_chunk_new ();
+  status = chunk_parse (chunk, bytes, chunk_size);
+  g_object_unref (chunk);
+
+  return status;
+}
+
+GstRtmpChunk *
+gst_rtmp_chunk_new_parse (GBytes * bytes, gsize * chunk_size)
+{
+  GstRtmpChunk *chunk;
+  GstRtmpChunkParseStatus status;
+
+  chunk = gst_rtmp_chunk_new ();
+  status = chunk_parse (chunk, bytes, chunk_size);
+  if (status == GST_RTMP_CHUNK_PARSE_OK)
+    return chunk;
+
+  g_object_unref (chunk);
+  return NULL;
+}
+
+void
+gst_rtmp_chunk_set_stream_id (GstRtmpChunk * chunk, guint32 stream_id)
+{
+  chunk->stream_id = stream_id;
+}
+
+void
+gst_rtmp_chunk_set_timestamp (GstRtmpChunk * chunk, guint32 timestamp)
+{
+  chunk->timestamp = timestamp;
+}
+
+void
+gst_rtmp_chunk_set_payload (GstRtmpChunk * chunk, GBytes * payload)
+{
+  if (chunk->payload) {
+    g_bytes_unref (chunk->payload);
+  }
+  chunk->payload = payload;
+}
+
+guint32
+gst_rtmp_chunk_get_stream_id (GstRtmpChunk * chunk)
+{
+  return chunk->stream_id;
+}
+
+guint32
+gst_rtmp_chunk_get_timestamp (GstRtmpChunk * chunk)
+{
+  return chunk->timestamp;
+}
+
+GBytes *
+gst_rtmp_chunk_get_payload (GstRtmpChunk * chunk)
+{
+  return chunk->payload;
+}

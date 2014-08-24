@@ -20,6 +20,7 @@
 #ifndef _GST_RTMP_CHUNK_H_
 #define _GST_RTMP_CHUNK_H_
 
+#include <glib.h>
 
 G_BEGIN_DECLS
 
@@ -36,13 +37,12 @@ struct _GstRtmpChunk
 {
   GObject object;
 
-  guint32 timestamp;
-  int type_id;
-  guint32 chunk_stream_id;
   guint32 stream_id;
-  int length;
-  guint8 *data;
+  guint32 timestamp;
+  gsize message_length;
+  int message_type_id;
 
+  GBytes *payload;
 };
 
 struct _GstRtmpChunkClass
@@ -50,7 +50,27 @@ struct _GstRtmpChunkClass
   GObjectClass object_class;
 };
 
+typedef enum {
+  GST_RTMP_CHUNK_PARSE_ERROR = 0,
+  GST_RTMP_CHUNK_PARSE_OK,
+  GST_RTMP_CHUNK_PARSE_UNKNOWN,
+  GST_RTMP_CHUNK_PARSE_NEED_BYTES,
+} GstRtmpChunkParseStatus;
+
 GType gst_rtmp_chunk_get_type (void);
+
+GstRtmpChunk *gst_rtmp_chunk_new (void);
+GstRtmpChunkParseStatus gst_rtmp_chunk_can_parse (GBytes *bytes,
+    gsize *chunk_size);
+GstRtmpChunk * gst_rtmp_chunk_new_parse (GBytes *bytes, gsize *chunk_size);
+
+void gst_rtmp_chunk_set_stream_id (GstRtmpChunk *chunk, guint32 stream_id);
+void gst_rtmp_chunk_set_timestamp (GstRtmpChunk *chunk, guint32 timestamp);
+void gst_rtmp_chunk_set_payload (GstRtmpChunk *chunk, GBytes *payload);
+
+guint32 gst_rtmp_chunk_get_stream_id (GstRtmpChunk *chunk);
+guint32 gst_rtmp_chunk_get_timestamp (GstRtmpChunk *chunk);
+GBytes * gst_rtmp_chunk_get_payload (GstRtmpChunk *chunk);
 
 G_END_DECLS
 

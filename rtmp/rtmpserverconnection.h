@@ -21,6 +21,7 @@
 #define _GST_RTMP_SERVER_CONNECTION_H_
 
 #include <gio/gio.h>
+#include <rtmp/rtmpchunk.h>
 
 G_BEGIN_DECLS
 
@@ -48,6 +49,10 @@ struct _GstRtmpServerConnection
 struct _GstRtmpServerConnectionClass
 {
   GObjectClass object_class;
+
+  /* signals */
+  void (*got_chunk) (GstRtmpServerConnection *connection,
+      GstRtmpChunk *chunk);
 };
 
 GType gst_rtmp_server_connection_get_type (void);

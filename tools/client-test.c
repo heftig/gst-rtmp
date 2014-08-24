@@ -36,7 +36,7 @@ static GOptionEntry entries[] = {
 };
 
 static void
-connect_done (GObject *source, GAsyncResult *result, gpointer user_data);
+connect_done (GObject * source, GAsyncResult * result, gpointer user_data);
 
 int
 main (int argc, char *argv[])
@@ -62,8 +62,7 @@ main (int argc, char *argv[])
 
   main_loop = g_main_loop_new (NULL, TRUE);
 
-  gst_rtmp_client_connect_async (client, cancellable, connect_done,
-      client);
+  gst_rtmp_client_connect_async (client, cancellable, connect_done, client);
 
   g_main_loop_run (main_loop);
 
@@ -71,7 +70,7 @@ main (int argc, char *argv[])
 }
 
 static void
-connect_done (GObject *source, GAsyncResult *result, gpointer user_data)
+connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
 {
   GstRtmpClient *client = user_data;
   GError *error = NULL;
@@ -79,10 +78,9 @@ connect_done (GObject *source, GAsyncResult *result, gpointer user_data)
 
   ret = gst_rtmp_client_connect_finish (client, result, &error);
   if (!ret) {
-    GST_ERROR("error: %s", error->message);
+    GST_ERROR ("error: %s", error->message);
     g_error_free (error);
   }
 
-  GST_ERROR("got here");
+  GST_ERROR ("got here");
 }
-

@@ -22,6 +22,8 @@
 
 #include <gio/gio.h>
 
+#include <rtmp/rtmpserverconnection.h>
+
 G_BEGIN_DECLS
 
 #define GST_TYPE_RTMP_SERVER   (gst_rtmp_server_get_type())
@@ -42,18 +44,29 @@ struct _GstRtmpServer
 
   /* private */
   GSocketService *socket_service;
+  GList *connections;
 
 };
 
 struct _GstRtmpServerClass
 {
   GObjectClass object_class;
+
+  /* signals */
+  void (*add_connection) (GstRtmpServer *server,
+      GstRtmpServerConnection *connection);
+  void (*remove_connection) (GstRtmpServer *server,
+      GstRtmpServerConnection *connection);
 };
 
 GType gst_rtmp_server_get_type (void);
 
 GstRtmpServer *gst_rtmp_server_new (void);
 void gst_rtmp_server_start (GstRtmpServer * rtmpserver);
+void gst_rtmp_server_add_connection (GstRtmpServer *rtmpserver,
+    GstRtmpServerConnection *connection);
+void gst_rtmp_server_remove_connection (GstRtmpServer *rtmpserver,
+    GstRtmpServerConnection *connection);
 
 G_END_DECLS
 

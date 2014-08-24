@@ -23,6 +23,7 @@
 
 #include <gst/gst.h>
 #include "rtmpserverconnection.h"
+#include "rtmpchunk.h"
 #include "amf.h"
 
 #include <string.h>
@@ -66,6 +67,10 @@ gst_rtmp_server_connection_class_init (GstRtmpServerConnectionClass * klass)
   gobject_class->dispose = gst_rtmp_server_connection_dispose;
   gobject_class->finalize = gst_rtmp_server_connection_finalize;
 
+  g_signal_new ("got-chunk", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpServerConnectionClass,
+          got_chunk), NULL, NULL, g_cclosure_marshal_generic,
+      G_TYPE_NONE, 1, GST_TYPE_RTMP_CHUNK);
 }
 
 static void
@@ -147,10 +152,6 @@ gst_rtmp_server_connection_new (GSocketConnection * connection)
   return sc;
 }
 
-static void
-gst_rtmp_server_connection_read_chunk_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
-
 typedef struct _ChunkRead ChunkRead;
 struct _ChunkRead
 {
@@ -229,21 +230,15 @@ static void
 gst_rtmp_server_connection_read_chunk (GstRtmpServerConnection * sc)
 {
   GInputStream *is;
-  ChunkRead *chunk;
-
-  chunk = g_malloc0 (sizeof (ChunkRead));
-  chunk->alloc_size = 4096;
-  chunk->data = g_malloc (chunk->alloc_size);
-  chunk->server_connection = sc;
 
   is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
 
-  g_input_stream_read_async (is, chunk->data, chunk->alloc_size,
+  g_input_stream_read_bytes_async (is, 4096,
       G_PRIORITY_DEFAULT, sc->cancellable,
-      gst_rtmp_server_connection_read_chunk_done, chunk);
+      gst_rtmp_server_connection_read_chunk_done, sc);
 }
 
-static void
+G_GNUC_UNUSED static void
 parse_message (guint8 * data, int size)
 {
   int offset;
@@ -275,99 +270,38 @@ parse_message (guint8 * data, int size)
 
 }
 
-typedef struct _Chunk Chunk;
-struct _Chunk
-{
-  int stream_id;
-  int header_fmt;
-  guint32 timestamp;
-  int message_length;
-  int message_type_id;
-  guint32 message_stream_id;
-};
-
-static void
-parse_chunk (guint8 * data, int size)
-{
-  Chunk _chunk, *chunk = &_chunk;
-  int offset;
-
-  chunk->header_fmt = data[0] >> 6;
-  chunk->stream_id = data[0] & 0x3f;
-  offset = 1;
-  if (chunk->stream_id == 0) {
-    chunk->stream_id = 64 + data[1];
-    offset = 2;
-  } else if (chunk->stream_id == 1) {
-    chunk->stream_id = 64 + data[1] + (data[2] << 8);
-    offset = 3;
-  }
-  chunk->timestamp =
-      (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
-  chunk->message_length =
-      (data[offset + 3] << 16) | (data[offset + 4] << 8) | data[offset + 5];
-  chunk->message_type_id = data[offset + 6];
-  offset += 7;
-
-  g_print ("header_fmt: %d\n", chunk->header_fmt);
-  g_print ("stream_id: %d\n", chunk->stream_id);
-  g_print ("timestamp: %d\n", chunk->timestamp);
-  g_print ("message_length: %d\n", chunk->message_length);
-  g_print ("message_type_id: %d\n", chunk->message_type_id);
-
-  parse_message (data + offset, size - offset);
-}
-
-static void
-dump_data (guint8 * data, int size)
-{
-  int i, j;
-  for (i = 0; i < size; i += 16) {
-    g_print ("%04x: ", i);
-    for (j = 0; j < 16; j++) {
-      if (i + j < size) {
-        g_print ("%02x ", data[i + j]);
-      } else {
-        g_print ("   ");
-      }
-    }
-    for (j = 0; j < 16; j++) {
-      if (i + j < size) {
-        g_print ("%c", g_ascii_isprint (data[i + j]) ? data[i + j] : '.');
-      }
-    }
-    g_print ("\n");
-  }
-}
-
 static void
 gst_rtmp_server_connection_read_chunk_done (GObject * obj,
     GAsyncResult * res, gpointer user_data)
 {
   GInputStream *is = G_INPUT_STREAM (obj);
-  ChunkRead *chunk = (ChunkRead *) user_data;
+  GstRtmpServerConnection *server_connection =
+      GST_RTMP_SERVER_CONNECTION (user_data);
+  GstRtmpChunk *chunk;
   GError *error = NULL;
-  gssize ret;
+  gsize chunk_size;
+  GBytes *bytes;
 
   GST_ERROR ("gst_rtmp_server_connection_read_chunk_done");
 
-  ret = g_input_stream_read_finish (is, res, &error);
-  if (ret < 0) {
+  bytes = g_input_stream_read_bytes_finish (is, res, &error);
+  if (bytes == NULL) {
     GST_ERROR ("read error: %s", error->message);
     g_error_free (error);
     return;
   }
-  GST_ERROR ("read %" G_GSSIZE_FORMAT " bytes", ret);
-  chunk->size = ret;
+  GST_ERROR ("read %" G_GSSIZE_FORMAT " bytes", g_bytes_get_size (bytes));
 
-  parse_chunk (chunk->data, chunk->size);
-  dump_data (chunk->data, chunk->size);
+  chunk = gst_rtmp_chunk_new_parse (bytes, &chunk_size);
 
-  if (0)
-    proxy_write_chunk (chunk->server_connection, chunk);
+  if (chunk) {
+    g_signal_emit_by_name (server_connection, "got-chunk", chunk);
+
+    g_object_unref (chunk);
+  }
 }
 
-static void
+G_GNUC_UNUSED static void
 proxy_write_chunk (GstRtmpServerConnection * sc, ChunkRead * chunk)
 {
   GOutputStream *os;

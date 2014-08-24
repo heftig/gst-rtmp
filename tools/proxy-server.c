@@ -28,6 +28,15 @@
 
 #define GETTEXT_PACKAGE NULL
 
+static void
+add_connection (GstRtmpServer * server, GstRtmpServerConnection * connection,
+    gpointer user_data);
+static void
+got_chunk (GstRtmpServerConnection * connection, GstRtmpChunk * chunk,
+    gpointer user_data);
+static void dump_data (GBytes * bytes);
+
+
 gboolean verbose;
 
 static GOptionEntry entries[] = {
@@ -54,6 +63,8 @@ main (int argc, char *argv[])
   g_option_context_free (context);
 
   server = gst_rtmp_server_new ();
+  g_signal_connect (server, "add-connection", G_CALLBACK (add_connection),
+      NULL);
   gst_rtmp_server_start (server);
 
   main_loop = g_main_loop_new (NULL, TRUE);
@@ -62,3 +73,49 @@ main (int argc, char *argv[])
   exit (0);
 }
 
+static void
+add_connection (GstRtmpServer * server, GstRtmpServerConnection * connection,
+    gpointer user_data)
+{
+  GST_ERROR ("new connection");
+
+  g_signal_connect (connection, "got-chunk", G_CALLBACK (got_chunk), NULL);
+}
+
+static void
+got_chunk (GstRtmpServerConnection * connection, GstRtmpChunk * chunk,
+    gpointer user_data)
+{
+  GBytes *bytes;
+
+  GST_ERROR ("got chunk");
+
+  bytes = gst_rtmp_chunk_get_payload (chunk);
+  dump_data (bytes);
+}
+
+static void
+dump_data (GBytes * bytes)
+{
+  const guint8 *data;
+  gsize size;
+  int i, j;
+
+  data = g_bytes_get_data (bytes, &size);
+  for (i = 0; i < size; i += 16) {
+    g_print ("%04x: ", i);
+    for (j = 0; j < 16; j++) {
+      if (i + j < size) {
+        g_print ("%02x ", data[i + j]);
+      } else {
+        g_print ("   ");
+      }
+    }
+    for (j = 0; j < 16; j++) {
+      if (i + j < size) {
+        g_print ("%c", g_ascii_isprint (data[i + j]) ? data[i + j] : '.');
+      }
+    }
+    g_print ("\n");
+  }
+}

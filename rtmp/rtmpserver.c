@@ -22,8 +22,7 @@
 #endif
 
 #include <gst/gst.h>
-#include "rtmpserver.h"
-#include "rtmpserverconnection.h"
+#include <rtmp/rtmpserver.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_rtmp_server_debug_category);
 #define GST_CAT_DEFAULT gst_rtmp_server_debug_category
@@ -62,6 +61,14 @@ gst_rtmp_server_class_init (GstRtmpServerClass * klass)
   gobject_class->dispose = gst_rtmp_server_dispose;
   gobject_class->finalize = gst_rtmp_server_finalize;
 
+  g_signal_new ("add-connection", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpServerClass,
+          add_connection), NULL, NULL, g_cclosure_marshal_generic,
+      G_TYPE_NONE, 1, GST_TYPE_RTMP_SERVER_CONNECTION);
+  g_signal_new ("remove-connection", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpServerClass,
+          remove_connection), NULL, NULL, g_cclosure_marshal_generic,
+      G_TYPE_NONE, 1, GST_TYPE_RTMP_SERVER_CONNECTION);
 }
 
 static void
@@ -108,6 +115,13 @@ gst_rtmp_server_dispose (GObject * object)
   GST_DEBUG_OBJECT (rtmpserver, "dispose");
 
   /* clean up as possible.  may be called multiple times */
+  g_list_free_full (rtmpserver->connections, g_object_unref);
+  rtmpserver->connections = NULL;
+
+  if (rtmpserver->socket_service) {
+    g_object_unref (rtmpserver->socket_service);
+    rtmpserver->socket_service = NULL;
+  }
 
   G_OBJECT_CLASS (gst_rtmp_server_parent_class)->dispose (object);
 }
@@ -144,8 +158,8 @@ gst_rtmp_server_start (GstRtmpServer * rtmpserver)
   rtmpserver->socket_service = g_socket_service_new ();
 
   ret =
-      g_socket_listener_add_inet_port (G_SOCKET_LISTENER (rtmpserver->
-          socket_service), rtmpserver->port, NULL, &error);
+      g_socket_listener_add_inet_port (G_SOCKET_LISTENER
+      (rtmpserver->socket_service), rtmpserver->port, NULL, &error);
   if (!ret) {
     GST_ERROR ("failed to add address: %s", error->message);
     g_object_unref (rtmpserver->socket_service);
@@ -168,8 +182,25 @@ gst_rtmp_server_incoming (GSocketService * service,
 
   g_object_ref (connection);
   server_connection = gst_rtmp_server_connection_new (connection);
-  (void) server_connection;
-  (void) rtmpserver;
+  gst_rtmp_server_add_connection (rtmpserver, server_connection);
 
   return TRUE;
+}
+
+void
+gst_rtmp_server_add_connection (GstRtmpServer * rtmpserver,
+    GstRtmpServerConnection * connection)
+{
+  rtmpserver->connections = g_list_prepend (rtmpserver->connections,
+      connection);
+  g_signal_emit_by_name (rtmpserver, "add-connection", connection);
+}
+
+void
+gst_rtmp_server_remove_connection (GstRtmpServer * rtmpserver,
+    GstRtmpServerConnection * connection)
+{
+  rtmpserver->connections = g_list_remove (rtmpserver->connections, connection);
+  g_signal_emit_by_name (rtmpserver, "remove-connection", connection);
+  g_object_unref (connection);
 }
