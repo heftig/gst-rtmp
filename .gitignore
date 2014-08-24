@@ -35,10 +35,14 @@ pkgconfig/gst-rtmp-*-uninstalled.pc
 pkgconfig/gst-rtmp-*.pc
 pkgconfig/gst-rtmp-uninstalled.pc
 pkgconfig/gst-rtmp.pc
-tools/server.crt
-tools/server.key
+tools/client-test
+tools/proxy-server
+doc/*.bak
 doc/gst-rtmp-decl-list.txt
 doc/gst-rtmp-decl.txt
+doc/gst-rtmp-docs.sgml
+doc/gst-rtmp-overrides.txt
+doc/gst-rtmp-sections.txt
 doc/gst-rtmp-undeclared.txt
 doc/gst-rtmp-undocumented.txt
 doc/gst-rtmp-unused.txt
@@ -47,6 +51,7 @@ doc/gst-rtmp.hierarchy
 doc/gst-rtmp.interfaces
 doc/gst-rtmp.prerequisites
 doc/gst-rtmp.signals
+doc/gst-rtmp.types
 doc/html-build.stamp
 doc/html.stamp
 doc/html/
