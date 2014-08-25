@@ -172,7 +172,7 @@ chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes)
           (data[offset + 2] << 8) | data[offset + 3];
       offset += 4;
     }
-    chunk->message_type_id = data[offset + 6];
+    chunk->message_type_id = data[offset];
     offset += 1;
 
     /* 4 byte something here */

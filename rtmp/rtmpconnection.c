@@ -40,14 +40,14 @@ static void gst_rtmp_connection_get_property (GObject * object,
     guint property_id, GValue * value, GParamSpec * pspec);
 static void gst_rtmp_connection_dispose (GObject * object);
 static void gst_rtmp_connection_finalize (GObject * object);
+static gboolean gst_rtmp_connection_input_ready (GInputStream * is,
+    gpointer user_data);
+static gboolean gst_rtmp_connection_output_ready (GOutputStream * os,
+    gpointer user_data);
 static void gst_rtmp_connection_client_handshake1_done (GObject * obj,
     GAsyncResult * res, gpointer user_data);
 static void gst_rtmp_connection_client_handshake2 (GstRtmpConnection * sc);
 static void gst_rtmp_connection_client_handshake2_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
-static void gst_rtmp_connection_client_handshake3 (GstRtmpConnection * sc,
-    GBytes * bytes);
-static void gst_rtmp_connection_client_handshake3_done (GObject * obj,
     GAsyncResult * res, gpointer user_data);
 static void gst_rtmp_connection_client_handshake1 (GstRtmpConnection * sc);
 static void gst_rtmp_connection_client_handshake1_done (GObject * obj,
@@ -55,26 +55,17 @@ static void gst_rtmp_connection_client_handshake1_done (GObject * obj,
 static void gst_rtmp_connection_client_handshake2 (GstRtmpConnection * sc);
 static void gst_rtmp_connection_client_handshake2_done (GObject * obj,
     GAsyncResult * res, gpointer user_data);
-static void gst_rtmp_connection_client_handshake3 (GstRtmpConnection * sc,
-    GBytes * bytes);
-static void gst_rtmp_connection_client_handshake3_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
-static void gst_rtmp_connection_read_chunk (GstRtmpConnection * sc);
-static void gst_rtmp_connection_read_chunk_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
-static void gst_rtmp_connection_write_chunk (GstRtmpConnection * sc);
 static void gst_rtmp_connection_write_chunk_done (GObject * obj,
     GAsyncResult * res, gpointer user_data);
 static void gst_rtmp_connection_server_handshake1 (GstRtmpConnection * sc);
 static void gst_rtmp_connection_server_handshake1_done (GObject * obj,
     GAsyncResult * res, gpointer user_data);
-static void gst_rtmp_connection_server_handshake2 (GstRtmpConnection * sc,
-    GBytes * bytes);
-static void gst_rtmp_connection_server_handshake2_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
-static void gst_rtmp_connection_server_handshake3 (GstRtmpConnection * sc);
-static void gst_rtmp_connection_server_handshake3_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
+static void gst_rtmp_connection_server_handshake2 (GstRtmpConnection * sc);
+static void
+gst_rtmp_connection_set_input_callback (GstRtmpConnection * connection,
+    void (*input_callback) (GstRtmpConnection * connection),
+    gsize needed_bytes);
+static void gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc);
 
 
 static void gst_rtmp_connection_server_handshake1 (GstRtmpConnection * sc);
@@ -172,26 +163,122 @@ GstRtmpConnection *
 gst_rtmp_connection_new (GSocketConnection * connection)
 {
   GstRtmpConnection *sc;
+  GInputStream *is;
+  GOutputStream *os;
 
   sc = g_object_new (GST_TYPE_RTMP_CONNECTION, NULL);
   sc->connection = connection;
 
+  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
+  sc->input_source =
+      g_pollable_input_stream_create_source (G_POLLABLE_INPUT_STREAM (is),
+      sc->cancellable);
+  g_source_set_callback (sc->input_source,
+      (GSourceFunc) gst_rtmp_connection_input_ready, sc, NULL);
+  g_source_attach (sc->input_source, NULL);
+
+  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
+  sc->output_source =
+      g_pollable_output_stream_create_source (G_POLLABLE_OUTPUT_STREAM (os),
+      sc->cancellable);
+  g_source_set_callback (sc->output_source,
+      (GSourceFunc) gst_rtmp_connection_output_ready, sc, NULL);
+
   return sc;
 }
 
+static gboolean
+gst_rtmp_connection_input_ready (GInputStream * is, gpointer user_data)
+{
+  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
+  guint8 *data;
+  gssize ret;
+  GError *error = NULL;
 
+  GST_DEBUG ("input ready");
+
+  data = g_malloc (128);
+  ret =
+      g_pollable_input_stream_read_nonblocking (G_POLLABLE_INPUT_STREAM (is),
+      data, 128, sc->cancellable, &error);
+  if (ret < 0) {
+    GST_ERROR ("read error: %s", error->message);
+    g_error_free (error);
+    return G_SOURCE_REMOVE;
+  }
+
+  if (sc->input_bytes) {
+    sc->input_bytes = gst_rtmp_bytes_append (sc->input_bytes, data, ret);
+  } else {
+    sc->input_bytes = g_bytes_new_take (data, ret);
+  }
+
+  if (sc->input_callback) {
+    if (g_bytes_get_size (sc->input_bytes) >= sc->input_needed_bytes) {
+      GstRtmpConnectionCallback callback;
+      GST_ERROR ("got %" G_GSIZE_FORMAT " bytes, calling callback",
+          g_bytes_get_size (sc->input_bytes));
+      callback = sc->input_callback;
+      sc->input_callback = NULL;
+      (*callback) (sc);
+    }
+  }
+
+  return G_SOURCE_CONTINUE;
+}
+
+static gboolean
+gst_rtmp_connection_output_ready (GOutputStream * os, gpointer user_data)
+{
+  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
+  GstRtmpChunk *chunk;
+  GBytes *bytes;
+
+  GST_ERROR ("output ready");
+
+  chunk = g_queue_pop_head (sc->output_queue);
+  if (!chunk) {
+    return G_SOURCE_REMOVE;
+  }
+
+  sc->writing = TRUE;
+  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
+  bytes = gst_rtmp_chunk_serialize (chunk);
+  gst_rtmp_dump_data (bytes);
+  g_output_stream_write_bytes_async (os, bytes, G_PRIORITY_DEFAULT,
+      sc->cancellable, gst_rtmp_connection_write_chunk_done, chunk);
+
+  return G_SOURCE_REMOVE;
+}
 
 static void
-gst_rtmp_connection_read_chunk (GstRtmpConnection * sc)
+gst_rtmp_connection_write_chunk_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data)
 {
-  GInputStream *is;
+  GOutputStream *os = G_OUTPUT_STREAM (obj);
+  GstRtmpChunk *chunk = GST_RTMP_CHUNK (user_data);
+  GstRtmpConnection *connection = GST_RTMP_CONNECTION (chunk->priv);
+  GError *error = NULL;
+  gssize ret;
 
-  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
+  GST_DEBUG ("gst_rtmp_connection_write_chunk_done");
 
-  g_input_stream_read_bytes_async (is, 4096,
-      G_PRIORITY_DEFAULT, sc->cancellable,
-      gst_rtmp_connection_read_chunk_done, sc);
+  connection->writing = FALSE;
+
+  ret = g_output_stream_write_bytes_finish (os, res, &error);
+  if (ret < 0) {
+    GST_ERROR ("write error: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  GST_ERROR ("write %" G_GSSIZE_FORMAT " bytes", ret);
+  g_object_unref (chunk);
+
+  if (g_source_get_context (connection->output_source) == NULL) {
+    g_source_attach (connection->output_source, NULL);
+  }
 }
+
 
 G_GNUC_UNUSED static void
 parse_message (guint8 * data, int size)
@@ -225,147 +312,52 @@ parse_message (guint8 * data, int size)
 
 }
 
-static void
-gst_rtmp_connection_read_chunk_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data)
+static GBytes *
+gst_rtmp_connection_take_input_bytes (GstRtmpConnection * sc, gsize size)
 {
-  GInputStream *is = G_INPUT_STREAM (obj);
-  GstRtmpConnection *connection = GST_RTMP_CONNECTION (user_data);
-  GstRtmpChunk *chunk;
-  GError *error = NULL;
-  gsize chunk_size;
   GBytes *bytes;
+  gsize current_size;
 
-  GST_DEBUG ("gst_rtmp_connection_read_chunk_done");
+  current_size = g_bytes_get_size (sc->input_bytes);
+  g_return_val_if_fail (size <= current_size, NULL);
 
-  bytes = g_input_stream_read_bytes_finish (is, res, &error);
-  if (bytes == NULL) {
-    GST_ERROR ("read error: %s", error->message);
-    g_error_free (error);
-    return;
-  }
-  GST_ERROR ("read %" G_GSSIZE_FORMAT " bytes", g_bytes_get_size (bytes));
-
-  gst_rtmp_dump_data (bytes);
-  chunk = gst_rtmp_chunk_new_parse (bytes, &chunk_size);
-
-  if (chunk) {
-    g_signal_emit_by_name (connection, "got-chunk", chunk);
-
-    g_object_unref (chunk);
+  if (current_size == size) {
+    bytes = sc->input_bytes;
+    sc->input_bytes = NULL;
+  } else {
+    GBytes *remaining_bytes;
+    bytes = g_bytes_new_from_bytes (sc->input_bytes, 0, size);
+    remaining_bytes = g_bytes_new_from_bytes (sc->input_bytes, size,
+        current_size - size);
+    g_bytes_unref (sc->input_bytes);
+    sc->input_bytes = remaining_bytes;
   }
 
-  gst_rtmp_connection_read_chunk (connection);
-}
-
-static void
-gst_rtmp_connection_write_chunk (GstRtmpConnection * sc)
-{
-  GOutputStream *os;
-  GBytes *bytes;
-  GstRtmpChunk *chunk;
-
-  if (sc->writing) {
-    GST_WARNING ("gst_rtmp_connection_write_chunk while writing == TRUE");
-    return;
-  }
-
-  chunk = g_queue_pop_head (sc->output_queue);
-  if (!chunk) {
-    return;
-  }
-
-  sc->writing = TRUE;
-  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
-  bytes = gst_rtmp_chunk_serialize (chunk);
-  gst_rtmp_dump_data (bytes);
-  g_output_stream_write_bytes_async (os, bytes, G_PRIORITY_DEFAULT,
-      sc->cancellable, gst_rtmp_connection_write_chunk_done, chunk);
-}
-
-static void
-gst_rtmp_connection_write_chunk_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data)
-{
-  GOutputStream *os = G_OUTPUT_STREAM (obj);
-  GstRtmpChunk *chunk = GST_RTMP_CHUNK (user_data);
-  GstRtmpConnection *connection = GST_RTMP_CONNECTION (chunk->priv);
-  GError *error = NULL;
-  gssize ret;
-
-  GST_DEBUG ("gst_rtmp_connection_write_chunk_done");
-
-  connection->writing = FALSE;
-
-  ret = g_output_stream_write_bytes_finish (os, res, &error);
-  if (ret < 0) {
-    GST_ERROR ("write error: %s", error->message);
-    g_error_free (error);
-    return;
-  }
-  GST_ERROR ("write %" G_GSSIZE_FORMAT " bytes", ret);
-  g_object_unref (chunk);
-
-  gst_rtmp_connection_write_chunk (connection);
+  return bytes;
 }
 
 static void
 gst_rtmp_connection_server_handshake1 (GstRtmpConnection * sc)
 {
-  GInputStream *is;
+  GOutputStream *os;
+  GBytes *bytes;
+  guint8 *data;
 
-  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
+  bytes = gst_rtmp_connection_take_input_bytes (sc, 1537);
+  data = g_malloc (1 + 1536 + 1536);
+  memcpy (data, g_bytes_get_data (bytes, NULL), 1 + 1536);
+  memset (data + 1537, 0, 8);
+  memset (data + 1537 + 8, 0xef, 1528);
+  g_bytes_unref (bytes);
 
-  g_input_stream_read_bytes_async (is, 4096,
+  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
+  g_output_stream_write_async (os, data, 1 + 1536 + 1536,
       G_PRIORITY_DEFAULT, sc->cancellable,
       gst_rtmp_connection_server_handshake1_done, sc);
 }
 
 static void
 gst_rtmp_connection_server_handshake1_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data)
-{
-  GInputStream *is = G_INPUT_STREAM (obj);
-  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
-  GError *error = NULL;
-  GBytes *bytes;
-
-  GST_DEBUG ("gst_rtmp_connection_server_handshake1_done");
-
-  bytes = g_input_stream_read_bytes_finish (is, res, &error);
-  if (bytes == NULL) {
-    GST_ERROR ("read error: %s", error->message);
-    g_error_free (error);
-    return;
-  }
-  GST_DEBUG ("read %" G_GSSIZE_FORMAT " bytes", g_bytes_get_size (bytes));
-
-  gst_rtmp_connection_server_handshake2 (sc, bytes);
-}
-
-static void
-gst_rtmp_connection_server_handshake2 (GstRtmpConnection * sc, GBytes * bytes)
-{
-  GOutputStream *os;
-  guint8 *data;
-  GBytes *out_bytes;
-
-  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
-
-  data = g_malloc (1 + 1536 + 1536);
-  memcpy (data, g_bytes_get_data (bytes, NULL), 1 + 1536);
-  memset (data + 1537, 0, 8);
-  memset (data + 1537 + 8, 0xef, 1528);
-
-  out_bytes = g_bytes_new_take (data, 1 + 1536 + 1536);
-
-  g_output_stream_write_bytes_async (os, out_bytes,
-      G_PRIORITY_DEFAULT, sc->cancellable,
-      gst_rtmp_connection_server_handshake2_done, sc);
-}
-
-static void
-gst_rtmp_connection_server_handshake2_done (GObject * obj,
     GAsyncResult * res, gpointer user_data)
 {
   GOutputStream *os = G_OUTPUT_STREAM (obj);
@@ -383,41 +375,54 @@ gst_rtmp_connection_server_handshake2_done (GObject * obj,
   }
   GST_DEBUG ("wrote %" G_GSSIZE_FORMAT " bytes", ret);
 
-  gst_rtmp_connection_server_handshake3 (sc);
+  gst_rtmp_connection_set_input_callback (sc,
+      gst_rtmp_connection_server_handshake2, 1536);
 }
 
 static void
-gst_rtmp_connection_server_handshake3 (GstRtmpConnection * sc)
+gst_rtmp_connection_server_handshake2 (GstRtmpConnection * sc)
 {
-  GInputStream *is;
-
-  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
-
-  g_input_stream_read_bytes_async (is, 1536,
-      G_PRIORITY_DEFAULT, sc->cancellable,
-      gst_rtmp_connection_server_handshake3_done, sc);
-}
-
-static void
-gst_rtmp_connection_server_handshake3_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data)
-{
-  GInputStream *is = G_INPUT_STREAM (obj);
-  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
-  GError *error = NULL;
   GBytes *bytes;
 
-  GST_DEBUG ("gst_rtmp_connection_server_handshake3_done");
+  bytes = gst_rtmp_connection_take_input_bytes (sc, 1536);
+  g_bytes_unref (bytes);
 
-  bytes = g_input_stream_read_bytes_finish (is, res, &error);
-  if (bytes == NULL) {
-    GST_ERROR ("read error: %s", error->message);
-    g_error_free (error);
-    return;
+  /* handshake finished */
+  GST_ERROR ("server handshake finished");
+
+  gst_rtmp_connection_set_input_callback (sc,
+      gst_rtmp_connection_chunk_callback, 0);
+
+}
+
+static void
+gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
+{
+  GstRtmpChunk *chunk;
+  gsize size;
+
+  while (1) {
+    GBytes *bytes;
+
+    if (sc->input_bytes == NULL)
+      break;
+    GST_ERROR ("parsing %" G_GSIZE_FORMAT " bytes",
+        g_bytes_get_size (sc->input_bytes));
+    gst_rtmp_dump_data (sc->input_bytes);
+
+    chunk = gst_rtmp_chunk_new_parse (sc->input_bytes, &size);
+    if (chunk == NULL)
+      break;
+
+    bytes = gst_rtmp_connection_take_input_bytes (sc, size);
+    g_bytes_unref (bytes);
+
+    GST_ERROR ("got chunk: %" G_GSIZE_FORMAT " bytes", chunk->message_length);
+    g_signal_emit_by_name (sc, "got-chunk", chunk);
+    g_object_unref (chunk);
   }
-  GST_DEBUG ("read %" G_GSSIZE_FORMAT " bytes", g_bytes_get_size (bytes));
-
-  gst_rtmp_connection_read_chunk (sc);
+  gst_rtmp_connection_set_input_callback (sc,
+      gst_rtmp_connection_chunk_callback, size);
 }
 
 void
@@ -429,8 +434,34 @@ gst_rtmp_connection_queue_chunk (GstRtmpConnection * connection,
 
   chunk->priv = connection;
   g_queue_push_tail (connection->output_queue, chunk);
-  if (!connection->writing) {
-    gst_rtmp_connection_write_chunk (connection);
+  if (connection->handshake_complete) {
+    g_source_attach (connection->output_source, NULL);
+  }
+}
+
+static void
+gst_rtmp_connection_set_input_callback (GstRtmpConnection * connection,
+    void (*input_callback) (GstRtmpConnection * connection), gsize needed_bytes)
+{
+  if (connection->input_callback) {
+    GST_ERROR ("already an input callback");
+  }
+  connection->input_callback = input_callback;
+  connection->input_needed_bytes = needed_bytes;
+  if (needed_bytes == 0) {
+    connection->input_needed_bytes = 1;
+  }
+}
+
+void
+gst_rtmp_connection_start_handshake (GstRtmpConnection * connection,
+    gboolean is_server)
+{
+  if (is_server) {
+    gst_rtmp_connection_set_input_callback (connection,
+        gst_rtmp_connection_server_handshake1, 1537);
+  } else {
+    gst_rtmp_connection_client_handshake1 (connection);
   }
 }
 
@@ -484,7 +515,7 @@ gst_rtmp_connection_client_handshake1_done (GObject * obj,
   GError *error = NULL;
   gssize ret;
 
-  GST_DEBUG ("gst_rtmp_connection_client_handshake2_done");
+  GST_DEBUG ("gst_rtmp_connection_client_handshake1_done");
 
   ret = g_output_stream_write_bytes_finish (os, res, &error);
   if (ret < 1 + 1536) {
@@ -494,59 +525,28 @@ gst_rtmp_connection_client_handshake1_done (GObject * obj,
   }
   GST_DEBUG ("wrote %" G_GSSIZE_FORMAT " bytes", ret);
 
-  gst_rtmp_connection_client_handshake2 (sc);
+  gst_rtmp_connection_set_input_callback (sc,
+      gst_rtmp_connection_client_handshake2, 1 + 1536 + 1536);
 }
 
 static void
 gst_rtmp_connection_client_handshake2 (GstRtmpConnection * sc)
 {
-  GInputStream *is;
+  GBytes *bytes;
+  GBytes *out_bytes;
+  GOutputStream *os;
 
-  is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
+  bytes = gst_rtmp_connection_take_input_bytes (sc, 1 + 1536 + 1536);
+  out_bytes = g_bytes_new_from_bytes (bytes, 1 + 1536, 1536);
+  g_bytes_unref (bytes);
 
-  g_input_stream_read_bytes_async (is, 1 + 1536 + 1536,
-      G_PRIORITY_DEFAULT, sc->cancellable,
-      gst_rtmp_connection_client_handshake2_done, sc);
+  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
+  g_output_stream_write_bytes_async (os, out_bytes, G_PRIORITY_DEFAULT,
+      sc->cancellable, gst_rtmp_connection_client_handshake2_done, sc);
 }
 
 static void
 gst_rtmp_connection_client_handshake2_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data)
-{
-  GInputStream *is = G_INPUT_STREAM (obj);
-  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
-  GError *error = NULL;
-  GBytes *bytes;
-
-  GST_DEBUG ("gst_rtmp_connection_client_handshake2_done");
-
-  bytes = g_input_stream_read_bytes_finish (is, res, &error);
-  if (bytes == NULL) {
-    GST_ERROR ("read error: %s", error->message);
-    g_error_free (error);
-    return;
-  }
-  GST_DEBUG ("read %" G_GSSIZE_FORMAT " bytes", g_bytes_get_size (bytes));
-
-  gst_rtmp_connection_client_handshake3 (sc, bytes);
-}
-
-static void
-gst_rtmp_connection_client_handshake3 (GstRtmpConnection * sc, GBytes * bytes)
-{
-  GOutputStream *os;
-  GBytes *out_bytes;
-
-  os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
-
-  out_bytes = g_bytes_new_from_bytes (bytes, 1 + 1536, 1536);
-
-  g_output_stream_write_bytes_async (os, out_bytes, G_PRIORITY_DEFAULT,
-      sc->cancellable, gst_rtmp_connection_client_handshake3_done, sc);
-}
-
-static void
-gst_rtmp_connection_client_handshake3_done (GObject * obj,
     GAsyncResult * res, gpointer user_data)
 {
   GOutputStream *os = G_OUTPUT_STREAM (obj);
@@ -554,7 +554,7 @@ gst_rtmp_connection_client_handshake3_done (GObject * obj,
   GError *error = NULL;
   gssize ret;
 
-  GST_DEBUG ("gst_rtmp_connection_client_handshake3_done");
+  GST_DEBUG ("gst_rtmp_connection_client_handshake2_done");
 
   ret = g_output_stream_write_bytes_finish (os, res, &error);
   if (ret < 1536) {
@@ -564,24 +564,12 @@ gst_rtmp_connection_client_handshake3_done (GObject * obj,
   }
   GST_DEBUG ("wrote %" G_GSSIZE_FORMAT " bytes", ret);
 
-  g_simple_async_result_complete (sc->async);
+  /* handshake finished */
+  GST_ERROR ("client handshake finished");
 
-  gst_rtmp_connection_read_chunk (sc);
-}
-
-gboolean
-gst_rtmp_connection_handshake_finish (GstRtmpConnection * connection,
-    GAsyncResult * result, GError ** error)
-{
-  GSimpleAsyncResult *simple;
-
-  g_return_val_if_fail (g_simple_async_result_is_valid (result,
-          G_OBJECT (connection), gst_rtmp_connection_handshake_async), FALSE);
-
-  simple = (GSimpleAsyncResult *) result;
-
-  if (g_simple_async_result_propagate_error (simple, error))
-    return FALSE;
-
-  return TRUE;
+  gst_rtmp_connection_set_input_callback (sc,
+      gst_rtmp_connection_chunk_callback, 0);
+  if (!g_queue_is_empty (sc->output_queue)) {
+    g_source_attach (sc->output_source, NULL);
+  }
 }

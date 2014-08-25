@@ -33,6 +33,7 @@ G_BEGIN_DECLS
 
 typedef struct _GstRtmpConnection GstRtmpConnection;
 typedef struct _GstRtmpConnectionClass GstRtmpConnectionClass;
+typedef void (*GstRtmpConnectionCallback) (GstRtmpConnection *connection);
 
 struct _GstRtmpConnection
 {
@@ -50,6 +51,13 @@ struct _GstRtmpConnection
   GQueue *output_queue;
   GSimpleAsyncResult *async;
   gboolean writing;
+
+  GSource *input_source;
+  GSource *output_source;
+  GBytes *input_bytes;
+  gsize input_needed_bytes;
+  GstRtmpConnectionCallback input_callback;
+  gboolean handshake_complete;
 };
 
 struct _GstRtmpConnectionClass
@@ -65,11 +73,8 @@ GType gst_rtmp_connection_get_type (void);
 
 GstRtmpConnection *gst_rtmp_connection_new (GSocketConnection *connection);
 
-void gst_rtmp_connection_handshake_async (GstRtmpConnection *connection,
-    gboolean is_server, GCancellable *cancellable,
-    GAsyncReadyCallback callback, gpointer user_data);
-gboolean gst_rtmp_connection_handshake_finish (GstRtmpConnection *connection,
-    GAsyncResult *result, GError **error);
+void gst_rtmp_connection_start_handshake (GstRtmpConnection *connection,
+    gboolean is_server);
 void gst_rtmp_connection_queue_chunk (GstRtmpConnection *connection,
     GstRtmpChunk *chunk);
 

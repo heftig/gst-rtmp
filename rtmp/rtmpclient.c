@@ -41,9 +41,11 @@ static void gst_rtmp_client_finalize (GObject * object);
 static void
 gst_rtmp_client_connect_done (GObject * source, GAsyncResult * result,
     gpointer user_data);
+#if 0
 static void
 gst_rtmp_client_handshake_done (GObject * source, GAsyncResult * result,
     gpointer user_data);
+#endif
 
 enum
 {
@@ -204,11 +206,13 @@ gst_rtmp_client_connect_done (GObject * source, GAsyncResult * result,
   }
 
   client->connection = gst_rtmp_connection_new (client->socket_connection);
-  gst_rtmp_connection_handshake_async (client->connection, FALSE,
-      client->cancellable, gst_rtmp_client_handshake_done, client);
+  gst_rtmp_connection_start_handshake (client->connection, FALSE);
+
+  g_simple_async_result_complete (client->async);
 }
 
-static void
+#if 0
+G_GNUC_UNUSED static void
 gst_rtmp_client_handshake_done (GObject * source, GAsyncResult * result,
     gpointer user_data)
 {
@@ -231,6 +235,7 @@ gst_rtmp_client_handshake_done (GObject * source, GAsyncResult * result,
   client->cancellable = NULL;
   g_simple_async_result_complete (client->async);
 }
+#endif
 
 gboolean
 gst_rtmp_client_connect_finish (GstRtmpClient * client,
