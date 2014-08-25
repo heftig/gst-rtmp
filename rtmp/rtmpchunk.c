@@ -23,6 +23,7 @@
 
 #include <gst/gst.h>
 #include "rtmpchunk.h"
+#include <string.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_rtmp_chunk_debug_category);
 #define GST_CAT_DEFAULT gst_rtmp_chunk_debug_category
@@ -234,6 +235,37 @@ gst_rtmp_chunk_new_parse (GBytes * bytes, gsize * chunk_size)
 
   g_object_unref (chunk);
   return NULL;
+}
+
+GBytes *
+gst_rtmp_chunk_serialize (GstRtmpChunk * chunk)
+{
+  guint8 *data;
+  const guint8 *chunkdata;
+  gsize chunksize;
+  int header_fmt;
+
+  /* FIXME this is incomplete and inefficient */
+  chunkdata = g_bytes_get_data (chunk->payload, &chunksize);
+  data = g_malloc (chunksize + 12);
+  header_fmt = 0;
+  g_assert (chunk->stream_id < 64);
+  data[0] = (header_fmt << 6) | (chunk->stream_id);
+  g_assert (chunk->timestamp < 0xffffff);
+  data[1] = (chunk->timestamp >> 16) & 0xff;
+  data[2] = (chunk->timestamp >> 8) & 0xff;
+  data[3] = chunk->timestamp & 0xff;
+  data[4] = (chunk->message_length >> 16) & 0xff;
+  data[5] = (chunk->message_length >> 8) & 0xff;
+  data[6] = chunk->message_length & 0xff;
+  data[7] = chunk->message_type_id;
+  data[8] = 0;
+  data[9] = 0;
+  data[10] = 0;
+  data[11] = 0;
+  memcpy (data + 12, chunkdata, chunksize);
+
+  return g_bytes_new_take (data, chunksize + 12);
 }
 
 void

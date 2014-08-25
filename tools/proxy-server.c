@@ -25,6 +25,8 @@
 #include <gio/gio.h>
 #include <stdlib.h>
 #include "rtmpserver.h"
+#include "rtmpclient.h"
+#include "rtmputils.h"
 
 #define GETTEXT_PACKAGE NULL
 
@@ -34,8 +36,13 @@ add_connection (GstRtmpServer * server, GstRtmpConnection * connection,
 static void
 got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
-static void dump_data (GBytes * bytes);
+static void
+connect_done (GObject * source, GAsyncResult * result, gpointer user_data);
 
+GstRtmpServer *server;
+GstRtmpClient *client;
+GCancellable *cancellable;
+GstRtmpChunk *proxy_chunk;
 
 gboolean verbose;
 
@@ -51,7 +58,6 @@ main (int argc, char *argv[])
   GError *error = NULL;
   GOptionContext *context;
   GMainLoop *main_loop;
-  GstRtmpServer *server;
 
   context = g_option_context_new ("- FIXME");
   g_option_context_add_main_entries (context, entries, GETTEXT_PACKAGE);
@@ -67,6 +73,10 @@ main (int argc, char *argv[])
       NULL);
   gst_rtmp_server_start (server);
 
+  client = gst_rtmp_client_new ();
+  cancellable = g_cancellable_new ();
+
+
   main_loop = g_main_loop_new (NULL, TRUE);
   g_main_loop_run (main_loop);
 
@@ -77,9 +87,11 @@ static void
 add_connection (GstRtmpServer * server, GstRtmpConnection * connection,
     gpointer user_data)
 {
-  GST_ERROR ("new connection");
+  GST_INFO ("new connection");
 
   g_signal_connect (connection, "got-chunk", G_CALLBACK (got_chunk), NULL);
+
+  gst_rtmp_client_connect_async (client, cancellable, connect_done, client);
 }
 
 static void
@@ -87,35 +99,43 @@ got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data)
 {
   GBytes *bytes;
+  GstRtmpConnection *proxy_conn;
 
-  GST_ERROR ("got chunk");
+  GST_INFO ("got chunk");
 
   bytes = gst_rtmp_chunk_get_payload (chunk);
-  dump_data (bytes);
+  gst_rtmp_dump_data (bytes);
+
+  proxy_conn = gst_rtmp_client_get_connection (client);
+
+  g_object_ref (chunk);
+  if (proxy_conn) {
+    gst_rtmp_connection_queue_chunk (proxy_conn, chunk);
+  } else {
+    /* save it for after the connection is complete */
+    proxy_chunk = chunk;
+  }
 }
 
 static void
-dump_data (GBytes * bytes)
+connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
 {
-  const guint8 *data;
-  gsize size;
-  int i, j;
+  GstRtmpClient *client = user_data;
+  GError *error = NULL;
+  gboolean ret;
 
-  data = g_bytes_get_data (bytes, &size);
-  for (i = 0; i < size; i += 16) {
-    g_print ("%04x: ", i);
-    for (j = 0; j < 16; j++) {
-      if (i + j < size) {
-        g_print ("%02x ", data[i + j]);
-      } else {
-        g_print ("   ");
-      }
-    }
-    for (j = 0; j < 16; j++) {
-      if (i + j < size) {
-        g_print ("%c", g_ascii_isprint (data[i + j]) ? data[i + j] : '.');
-      }
-    }
-    g_print ("\n");
+  GST_INFO ("connect_done");
+
+  ret = gst_rtmp_client_connect_finish (client, result, &error);
+  if (!ret) {
+    GST_ERROR ("error: %s", error->message);
+    g_error_free (error);
+  }
+  if (proxy_chunk) {
+    GstRtmpConnection *proxy_conn;
+
+    proxy_conn = gst_rtmp_client_get_connection (client);
+    gst_rtmp_connection_queue_chunk (proxy_conn, proxy_chunk);
+    proxy_chunk = NULL;
   }
 }

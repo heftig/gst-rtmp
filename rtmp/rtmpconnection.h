@@ -38,12 +38,18 @@ struct _GstRtmpConnection
 {
   GObject object;
 
+  /* should be properties */
+  gboolean input_paused;
+
   /* private */
   GSocketConnection *connection;
   GSocketConnection *proxy_connection;
   GCancellable *cancellable;
   int state;
   GSocketClient *socket_client;
+  GQueue *output_queue;
+  GSimpleAsyncResult *async;
+  gboolean writing;
 };
 
 struct _GstRtmpConnectionClass
@@ -57,8 +63,15 @@ struct _GstRtmpConnectionClass
 
 GType gst_rtmp_connection_get_type (void);
 
-GstRtmpConnection *gst_rtmp_connection_new (
-    GSocketConnection *connection);
+GstRtmpConnection *gst_rtmp_connection_new (GSocketConnection *connection);
+
+void gst_rtmp_connection_handshake_async (GstRtmpConnection *connection,
+    gboolean is_server, GCancellable *cancellable,
+    GAsyncReadyCallback callback, gpointer user_data);
+gboolean gst_rtmp_connection_handshake_finish (GstRtmpConnection *connection,
+    GAsyncResult *result, GError **error);
+void gst_rtmp_connection_queue_chunk (GstRtmpConnection *connection,
+    GstRtmpChunk *chunk);
 
 G_END_DECLS
 

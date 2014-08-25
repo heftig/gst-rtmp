@@ -22,6 +22,7 @@
 
 #include <rtmp/rtmpmessage.h>
 #include <rtmp/rtmpchunk.h>
+#include <rtmp/rtmpconnection.h>
 
 G_BEGIN_DECLS
 
@@ -67,9 +68,12 @@ struct _GstRtmpClient
   GCond cond;
   GMainContext *context;
 
+  GCancellable *cancellable;
+  GSimpleAsyncResult *async;
   GSocketClient *socket_client;
-  GSocketConnection *connection;
+  GSocketConnection *socket_connection;
 
+  GstRtmpConnection *connection;
 };
 
 struct _GstRtmpClientClass
@@ -93,12 +97,7 @@ void gst_rtmp_client_connect_async (GstRtmpClient *client,
 gboolean gst_rtmp_client_connect_finish (GstRtmpClient *client,
     GAsyncResult *result, GError **error);
 
-void gst_rtmp_client_queue_message (GstRtmpClient *client,
-    GstRtmpMessage *message, GstRtmpClientMessageCallback callback,
-    gpointer user_data);
-void gst_rtmp_client_queue_chunk (GstRtmpClient *client,
-    GstRtmpChunk *Chunk, GstRtmpClientChunkCallback callback,
-    gpointer user_data);
+GstRtmpConnection *gst_rtmp_client_get_connection (GstRtmpClient *client);
 
 
 G_END_DECLS

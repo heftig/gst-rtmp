@@ -30,4 +30,6 @@ sources = \
 	rtmpserver.c \
 	rtmpserver.h \
 	rtmpstream.c \
-	rtmpstream.h
+	rtmpstream.h \
+	rtmputils.c \
+	rtmputils.h

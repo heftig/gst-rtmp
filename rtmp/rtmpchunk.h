@@ -43,6 +43,7 @@ struct _GstRtmpChunk
   int message_type_id;
 
   GBytes *payload;
+  gpointer priv;
 };
 
 struct _GstRtmpChunkClass
@@ -63,6 +64,7 @@ GstRtmpChunk *gst_rtmp_chunk_new (void);
 GstRtmpChunkParseStatus gst_rtmp_chunk_can_parse (GBytes *bytes,
     gsize *chunk_size);
 GstRtmpChunk * gst_rtmp_chunk_new_parse (GBytes *bytes, gsize *chunk_size);
+GBytes * gst_rtmp_chunk_serialize (GstRtmpChunk *chunk);
 
 void gst_rtmp_chunk_set_stream_id (GstRtmpChunk *chunk, guint32 stream_id);
 void gst_rtmp_chunk_set_timestamp (GstRtmpChunk *chunk, guint32 timestamp);

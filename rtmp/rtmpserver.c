@@ -38,6 +38,9 @@ static void gst_rtmp_server_finalize (GObject * object);
 static gboolean gst_rtmp_server_incoming (GSocketService * service,
     GSocketConnection * connection, GObject * source_object,
     gpointer user_data);
+static void
+gst_rtmp_server_handshake_done (GObject * source, GAsyncResult * result,
+    gpointer user_data);
 
 
 enum
@@ -179,13 +182,33 @@ gst_rtmp_server_incoming (GSocketService * service,
   GstRtmpServer *rtmpserver = GST_RTMP_SERVER (user_data);
   GstRtmpConnection *connection;
 
-  GST_ERROR ("client connected");
+  GST_INFO ("client connected");
 
   g_object_ref (socket_connection);
   connection = gst_rtmp_connection_new (socket_connection);
   gst_rtmp_server_add_connection (rtmpserver, connection);
+  gst_rtmp_connection_handshake_async (connection, TRUE,
+      NULL, gst_rtmp_server_handshake_done, rtmpserver);
 
   return TRUE;
+}
+
+static void
+gst_rtmp_server_handshake_done (GObject * source, GAsyncResult * result,
+    gpointer user_data)
+{
+  //GstRtmpServer *rtmpserver = GST_RTMP_SERVER (user_data);
+  GstRtmpConnection *connection = GST_RTMP_CONNECTION (source);
+  GError *error = NULL;
+  gboolean ret;
+
+  GST_ERROR ("handshake done");
+
+  ret = gst_rtmp_connection_handshake_finish (connection, result, &error);
+  if (!ret) {
+    g_error_free (error);
+    return;
+  }
 }
 
 void
