@@ -23,6 +23,7 @@
 
 #include <gst/gst.h>
 #include "rtmpchunk.h"
+#include "rtmputils.h"
 #include <string.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_rtmp_chunk_debug_category);
@@ -142,8 +143,8 @@ chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes)
   if (size < 1)
     return GST_RTMP_CHUNK_PARSE_UNKNOWN;
 
-  header_fmt = data[0] >> 6;
-  chunk->stream_id = data[0] & 0x3f;
+  header_fmt = data[0] >> 6;    /* librtmp: m_headerType */
+  chunk->stream_id = data[0] & 0x3f;    /* librtmp: m_nChannel */
   offset = 1;
   if (chunk->stream_id == 0) {
     if (size < 2)
@@ -159,23 +160,27 @@ chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes)
   if (header_fmt == 0) {
     if (size < offset + 11)
       return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+    /* librtmp: m_nTimeStamp */
     chunk->timestamp =
         (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
     offset += 3;
+    /* librtmp: m_nBodySize */
     chunk->message_length =
         (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
     offset += 3;
     if (chunk->timestamp == 0xffffff) {
-      if (size < offset + 4)
+      if (size < offset + 4 + 1 + 4)
         return GST_RTMP_CHUNK_PARSE_UNKNOWN;
       chunk->timestamp = (data[offset] << 24) | (data[offset + 1] << 16) |
           (data[offset + 2] << 8) | data[offset + 3];
       offset += 4;
     }
-    chunk->message_type_id = data[offset];
+    chunk->message_type_id = data[offset];      /* librtmp: m_packetType */
     offset += 1;
 
-    /* 4 byte something here */
+    /* librtmp: m_nInfoField2 */
+    chunk->info = (data[offset] << 24) | (data[offset + 1] << 16) |
+        (data[offset + 2] << 8) | data[offset + 3];
     offset += 4;
   } else if (header_fmt == 1) {
     if (size < offset + 7)
@@ -203,6 +208,16 @@ chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes)
     *needed_bytes = offset + chunk->message_length;
   if (size < offset + chunk->message_length)
     return GST_RTMP_CHUNK_PARSE_NEED_BYTES;
+
+#if 0
+  {
+    GBytes *b;
+    GST_ERROR ("PARSED CHUNK:");
+    b = g_bytes_new_from_bytes (bytes, 0, offset + chunk->message_length);
+    gst_rtmp_dump_data (b);
+    g_bytes_unref (b);
+  }
+#endif
 
   chunk->payload =
       g_bytes_new_from_bytes (bytes, offset, chunk->message_length);

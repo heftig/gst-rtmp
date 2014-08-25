@@ -177,7 +177,9 @@ gst_rtmp_client_connect_async (GstRtmpClient * client,
   client->cancellable = cancellable;
   client->async = async;
 
-  addr = g_network_address_new ("localhost", 1935);
+  addr =
+      g_network_address_new
+      ("ec2-54-188-128-44.us-west-2.compute.amazonaws.com", 1935);
   client->socket_client = g_socket_client_new ();
 
   GST_DEBUG ("g_socket_client_connect_async");

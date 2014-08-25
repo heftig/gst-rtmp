@@ -38,9 +38,13 @@ got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
 static void
 connect_done (GObject * source, GAsyncResult * result, gpointer user_data);
+static void
+got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    gpointer user_data);
 
 GstRtmpServer *server;
 GstRtmpClient *client;
+GstRtmpConnection *client_connection;
 GCancellable *cancellable;
 GstRtmpChunk *proxy_chunk;
 
@@ -92,6 +96,8 @@ add_connection (GstRtmpServer * server, GstRtmpConnection * connection,
   g_signal_connect (connection, "got-chunk", G_CALLBACK (got_chunk), NULL);
 
   gst_rtmp_client_connect_async (client, cancellable, connect_done, client);
+
+  client_connection = connection;
 }
 
 static void
@@ -110,8 +116,10 @@ got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
 
   g_object_ref (chunk);
   if (proxy_conn) {
+    GST_ERROR ("sending to server: %" G_GSIZE_FORMAT, chunk->message_length);
     gst_rtmp_connection_queue_chunk (proxy_conn, chunk);
   } else {
+    GST_ERROR ("saving first chunk");
     /* save it for after the connection is complete */
     proxy_chunk = chunk;
   }
@@ -121,6 +129,7 @@ static void
 connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
 {
   GstRtmpClient *client = user_data;
+  GstRtmpConnection *proxy_conn;
   GError *error = NULL;
   gboolean ret;
 
@@ -135,7 +144,24 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
     GstRtmpConnection *proxy_conn;
 
     proxy_conn = gst_rtmp_client_get_connection (client);
+    GST_ERROR ("sending to server: %" G_GSIZE_FORMAT,
+        proxy_chunk->message_length);
     gst_rtmp_connection_queue_chunk (proxy_conn, proxy_chunk);
     proxy_chunk = NULL;
   }
+
+  proxy_conn = gst_rtmp_client_get_connection (client);
+  g_signal_connect (proxy_conn, "got-chunk", G_CALLBACK (got_chunk_proxy),
+      NULL);
+}
+
+static void
+got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    gpointer user_data)
+{
+  GST_INFO ("got chunk");
+
+  g_object_ref (chunk);
+  GST_ERROR ("sending to client: %" G_GSIZE_FORMAT, chunk->message_length);
+  gst_rtmp_connection_queue_chunk (client_connection, chunk);
 }

@@ -53,7 +53,6 @@ struct _GstRtmpConnection
   gboolean writing;
 
   GSource *input_source;
-  GSource *output_source;
   GBytes *input_bytes;
   gsize input_needed_bytes;
   GstRtmpConnectionCallback input_callback;

@@ -41,6 +41,7 @@ struct _GstRtmpChunk
   guint32 timestamp;
   gsize message_length;
   int message_type_id;
+  guint32 info;
 
   GBytes *payload;
   gpointer priv;
