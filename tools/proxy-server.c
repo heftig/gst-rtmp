@@ -41,10 +41,12 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data);
 static void
 got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
+static gboolean periodic (gpointer user_data);
 
 GstRtmpServer *server;
 GstRtmpClient *client;
 GstRtmpConnection *client_connection;
+GstRtmpConnection *server_connection;
 GCancellable *cancellable;
 GstRtmpChunk *proxy_chunk;
 
@@ -80,6 +82,7 @@ main (int argc, char *argv[])
   client = gst_rtmp_client_new ();
   cancellable = g_cancellable_new ();
 
+  g_timeout_add (1000, periodic, NULL);
 
   main_loop = g_main_loop_new (NULL, TRUE);
   g_main_loop_run (main_loop);
@@ -110,13 +113,14 @@ got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   GST_INFO ("got chunk");
 
   bytes = gst_rtmp_chunk_get_payload (chunk);
-  gst_rtmp_dump_data (bytes);
+  if (0)
+    gst_rtmp_dump_data (bytes);
 
   proxy_conn = gst_rtmp_client_get_connection (client);
 
   g_object_ref (chunk);
   if (proxy_conn) {
-    GST_ERROR ("sending to server: %" G_GSIZE_FORMAT, chunk->message_length);
+    GST_ERROR (">>>: %" G_GSIZE_FORMAT, chunk->message_length);
     gst_rtmp_connection_queue_chunk (proxy_conn, chunk);
   } else {
     GST_ERROR ("saving first chunk");
@@ -144,6 +148,7 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
     GstRtmpConnection *proxy_conn;
 
     proxy_conn = gst_rtmp_client_get_connection (client);
+    server_connection = proxy_conn;
     GST_ERROR ("sending to server: %" G_GSIZE_FORMAT,
         proxy_chunk->message_length);
     gst_rtmp_connection_queue_chunk (proxy_conn, proxy_chunk);
@@ -159,9 +164,30 @@ static void
 got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data)
 {
+  GBytes *bytes;
+
   GST_INFO ("got chunk");
 
   g_object_ref (chunk);
-  GST_ERROR ("sending to client: %" G_GSIZE_FORMAT, chunk->message_length);
+  GST_ERROR ("<<<: %" G_GSIZE_FORMAT, chunk->message_length);
+
+  bytes = gst_rtmp_chunk_get_payload (chunk);
+  gst_rtmp_dump_data (bytes);
+
   gst_rtmp_connection_queue_chunk (client_connection, chunk);
+}
+
+static gboolean
+periodic (gpointer user_data)
+{
+  g_print (".\n");
+  if (client_connection) {
+    g_print ("CLIENT:\n");
+    gst_rtmp_connection_dump (client_connection);
+  }
+  if (server_connection) {
+    g_print ("SERVER:\n");
+    gst_rtmp_connection_dump (server_connection);
+  }
+  return G_SOURCE_CONTINUE;
 }

@@ -57,6 +57,8 @@ struct _GstRtmpConnection
   gsize input_needed_bytes;
   GstRtmpConnectionCallback input_callback;
   gboolean handshake_complete;
+  GstRtmpChunkCache *input_chunk_cache;
+  GstRtmpChunkCache *output_chunk_cache;
 };
 
 struct _GstRtmpConnectionClass
@@ -76,6 +78,7 @@ void gst_rtmp_connection_start_handshake (GstRtmpConnection *connection,
     gboolean is_server);
 void gst_rtmp_connection_queue_chunk (GstRtmpConnection *connection,
     GstRtmpChunk *chunk);
+void gst_rtmp_connection_dump (GstRtmpConnection *connection);
 
 G_END_DECLS
 

@@ -129,7 +129,8 @@ gst_rtmp_chunk_new (void)
 }
 
 static GstRtmpChunkParseStatus
-chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes)
+chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes,
+    GstRtmpChunkCache * cache)
 {
   int offset;
   const guint8 *data;
@@ -182,42 +183,61 @@ chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes)
     chunk->info = (data[offset] << 24) | (data[offset + 1] << 16) |
         (data[offset + 2] << 8) | data[offset + 3];
     offset += 4;
-  } else if (header_fmt == 1) {
-    if (size < offset + 7)
-      return GST_RTMP_CHUNK_PARSE_UNKNOWN;
-    GST_ERROR ("unimplemented: need previous chunk");
-    chunk->timestamp =
-        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
-    offset += 3;
-    chunk->message_length =
-        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
-    offset += 3;
-  } else if (header_fmt == 2) {
-    if (size < offset + 3)
-      return GST_RTMP_CHUNK_PARSE_UNKNOWN;
-    chunk->timestamp = 0;
-    GST_ERROR ("unimplemented: need previous chunk");
-    return GST_RTMP_CHUNK_PARSE_ERROR;
   } else {
-    chunk->timestamp = 0;
-    GST_ERROR ("unimplemented: need previous chunk");
-    return GST_RTMP_CHUNK_PARSE_ERROR;
+    GstRtmpChunkCacheEntry *cached;
+
+    cached = gst_rtmp_chunk_cache_get (cache, chunk->stream_id);
+    if (cached) {
+      chunk->timestamp = cached->timestamp;
+      chunk->message_length = cached->message_length;
+      chunk->message_type_id = cached->message_type_id;
+      chunk->info = cached->info;
+    } else {
+      GST_ERROR ("uncached chunk, stream_id = %d", chunk->stream_id);
+    }
+
+    if (header_fmt == 1) {
+      if (size < offset + 7)
+        return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+      chunk->timestamp +=
+          (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+      offset += 3;
+      chunk->message_length =
+          (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+      offset += 3;
+      chunk->message_type_id = data[offset];
+      offset += 1;
+    } else if (header_fmt == 2) {
+      if (size < offset + 3)
+        return GST_RTMP_CHUNK_PARSE_UNKNOWN;
+      chunk->timestamp +=
+          (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+      offset += 3;
+    } else {
+      /* ok */
+    }
   }
+
+  /* WTF */
+  if ((header_fmt < 2) &&
+      (chunk->message_type_id == 0x12 || chunk->message_type_id == 0x09)) {
+    chunk->message_length += (chunk->message_length >> 7);
+  }
+#if 1
+  if (1) {
+    GBytes *b;
+    GST_ERROR ("PARSED CHUNK:");
+    b = g_bytes_new_from_bytes (bytes, 0, size);
+    gst_rtmp_dump_data (b);
+    g_bytes_unref (b);
+    //*(int *)0 = 1;
+  }
+#endif
 
   if (needed_bytes)
     *needed_bytes = offset + chunk->message_length;
   if (size < offset + chunk->message_length)
     return GST_RTMP_CHUNK_PARSE_NEED_BYTES;
-
-#if 0
-  {
-    GBytes *b;
-    GST_ERROR ("PARSED CHUNK:");
-    b = g_bytes_new_from_bytes (bytes, 0, offset + chunk->message_length);
-    gst_rtmp_dump_data (b);
-    g_bytes_unref (b);
-  }
-#endif
 
   chunk->payload =
       g_bytes_new_from_bytes (bytes, offset, chunk->message_length);
@@ -225,26 +245,29 @@ chunk_parse (GstRtmpChunk * chunk, GBytes * bytes, gsize * needed_bytes)
 }
 
 GstRtmpChunkParseStatus
-gst_rtmp_chunk_can_parse (GBytes * bytes, gsize * chunk_size)
+gst_rtmp_chunk_can_parse (GBytes * bytes, gsize * chunk_size,
+    GstRtmpChunkCache * cache)
 {
   GstRtmpChunk *chunk;
   GstRtmpChunkParseStatus status;
 
   chunk = gst_rtmp_chunk_new ();
-  status = chunk_parse (chunk, bytes, chunk_size);
+  status = chunk_parse (chunk, bytes, chunk_size, cache);
   g_object_unref (chunk);
 
   return status;
 }
 
 GstRtmpChunk *
-gst_rtmp_chunk_new_parse (GBytes * bytes, gsize * chunk_size)
+gst_rtmp_chunk_new_parse (GBytes * bytes, gsize * chunk_size,
+    GstRtmpChunkCache * cache)
 {
   GstRtmpChunk *chunk;
   GstRtmpChunkParseStatus status;
 
   chunk = gst_rtmp_chunk_new ();
-  status = chunk_parse (chunk, bytes, chunk_size);
+  status = chunk_parse (chunk, bytes, chunk_size, cache);
+  GST_ERROR ("status %d", status);
   if (status == GST_RTMP_CHUNK_PARSE_OK)
     return chunk;
 
@@ -253,34 +276,56 @@ gst_rtmp_chunk_new_parse (GBytes * bytes, gsize * chunk_size)
 }
 
 GBytes *
-gst_rtmp_chunk_serialize (GstRtmpChunk * chunk)
+gst_rtmp_chunk_serialize (GstRtmpChunk * chunk, GstRtmpChunkCache * cache)
 {
   guint8 *data;
   const guint8 *chunkdata;
   gsize chunksize;
   int header_fmt;
+  GstRtmpChunkCacheEntry *cached;
+  guint32 timestamp;
+  int offset;
 
   /* FIXME this is incomplete and inefficient */
   chunkdata = g_bytes_get_data (chunk->payload, &chunksize);
   data = g_malloc (chunksize + 12);
+
   header_fmt = 0;
+  cached = gst_rtmp_chunk_cache_get (cache, chunk->stream_id);
+  if (cached) {
+    header_fmt = 1;
+    timestamp = chunk->timestamp - cached->timestamp;
+  }
+
   g_assert (chunk->stream_id < 64);
   data[0] = (header_fmt << 6) | (chunk->stream_id);
-  g_assert (chunk->timestamp < 0xffffff);
-  data[1] = (chunk->timestamp >> 16) & 0xff;
-  data[2] = (chunk->timestamp >> 8) & 0xff;
-  data[3] = chunk->timestamp & 0xff;
-  data[4] = (chunk->message_length >> 16) & 0xff;
-  data[5] = (chunk->message_length >> 8) & 0xff;
-  data[6] = chunk->message_length & 0xff;
-  data[7] = chunk->message_type_id;
-  data[8] = 0;
-  data[9] = 0;
-  data[10] = 0;
-  data[11] = 0;
-  memcpy (data + 12, chunkdata, chunksize);
+  if (header_fmt == 0) {
+    g_assert (chunk->timestamp < 0xffffff);
+    data[1] = (chunk->timestamp >> 16) & 0xff;
+    data[2] = (chunk->timestamp >> 8) & 0xff;
+    data[3] = chunk->timestamp & 0xff;
+    data[4] = (chunk->message_length >> 16) & 0xff;
+    data[5] = (chunk->message_length >> 8) & 0xff;
+    data[6] = chunk->message_length & 0xff;
+    data[7] = chunk->message_type_id;
+    data[8] = (chunk->info >> 24) & 0xff;
+    data[9] = (chunk->info >> 16) & 0xff;
+    data[10] = (chunk->info >> 8) & 0xff;
+    data[11] = chunk->info & 0xff;
+    offset = 12;
+  } else {
+    data[1] = (timestamp >> 16) & 0xff;
+    data[2] = (timestamp >> 8) & 0xff;
+    data[3] = timestamp & 0xff;
+    data[4] = (chunk->message_length >> 16) & 0xff;
+    data[5] = (chunk->message_length >> 8) & 0xff;
+    data[6] = chunk->message_length & 0xff;
+    data[7] = chunk->message_type_id;
+    offset = 8;
+  }
+  memcpy (data + offset, chunkdata, chunksize);
 
-  return g_bytes_new_take (data, chunksize + 12);
+  return g_bytes_new_take (data, chunksize + offset);
 }
 
 void
@@ -320,4 +365,48 @@ GBytes *
 gst_rtmp_chunk_get_payload (GstRtmpChunk * chunk)
 {
   return chunk->payload;
+}
+
+/* chunk cache */
+
+GstRtmpChunkCache *
+gst_rtmp_chunk_cache_new (void)
+{
+  return g_array_new (FALSE, TRUE, sizeof (GstRtmpChunkCacheEntry));
+}
+
+void
+gst_rtmp_chunk_cache_free (GstRtmpChunkCache * cache)
+{
+  g_array_free (cache, TRUE);
+
+}
+
+GstRtmpChunkCacheEntry *
+gst_rtmp_chunk_cache_get (GstRtmpChunkCache * cache, int stream_id)
+{
+  int i;
+  GstRtmpChunkCacheEntry *entry;
+  for (i = 0; i < cache->len; i++) {
+    entry = &g_array_index (cache, GstRtmpChunkCacheEntry, i);
+    if (entry->stream_id == stream_id)
+      return entry;
+  }
+  return NULL;
+}
+
+void
+gst_rtmp_chunk_cache_update (GstRtmpChunkCache * cache, GstRtmpChunk * chunk)
+{
+  GstRtmpChunkCacheEntry *entry;
+  entry = gst_rtmp_chunk_cache_get (cache, chunk->stream_id);
+  if (entry == NULL) {
+    g_array_set_size (cache, cache->len + 1);
+    entry = &g_array_index (cache, GstRtmpChunkCacheEntry, cache->len - 1);
+    entry->stream_id = chunk->stream_id;
+  }
+  entry->timestamp = chunk->timestamp;
+  entry->message_length = chunk->message_length;
+  entry->message_type_id = chunk->message_type_id;
+  entry->info = chunk->info;
 }

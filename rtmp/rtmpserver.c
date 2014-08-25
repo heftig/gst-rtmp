@@ -74,7 +74,7 @@ gst_rtmp_server_class_init (GstRtmpServerClass * klass)
 static void
 gst_rtmp_server_init (GstRtmpServer * rtmpserver)
 {
-  rtmpserver->port = 11935;
+  rtmpserver->port = 1935;
 }
 
 void
