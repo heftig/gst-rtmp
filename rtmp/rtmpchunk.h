@@ -34,12 +34,23 @@ typedef struct _GstRtmpChunk GstRtmpChunk;
 typedef struct _GstRtmpChunkClass GstRtmpChunkClass;
 typedef GArray GstRtmpChunkCache;
 typedef struct _GstRtmpChunkCacheEntry GstRtmpChunkCacheEntry;
-struct _GstRtmpChunkCacheEntry {
+typedef struct _GstRtmpChunkHeader GstRtmpChunkHeader;
+
+struct _GstRtmpChunkHeader {
+  int format;
+  gsize header_size;
   guint32 stream_id;
   guint32 timestamp;
   gsize message_length;
   int message_type_id;
   guint32 info;
+};
+
+struct _GstRtmpChunkCacheEntry {
+  GstRtmpChunkHeader previous_header;
+  GstRtmpChunk *chunk;
+  guint8 *payload;
+  gsize offset;
 };
 
 struct _GstRtmpChunk
@@ -85,6 +96,11 @@ void gst_rtmp_chunk_set_payload (GstRtmpChunk *chunk, GBytes *payload);
 guint32 gst_rtmp_chunk_get_stream_id (GstRtmpChunk *chunk);
 guint32 gst_rtmp_chunk_get_timestamp (GstRtmpChunk *chunk);
 GBytes * gst_rtmp_chunk_get_payload (GstRtmpChunk *chunk);
+
+gboolean gst_rtmp_chunk_parse_header1 (GstRtmpChunkHeader *header, GBytes * bytes);
+gboolean gst_rtmp_chunk_parse_header2 (GstRtmpChunkHeader *header, GBytes * bytes,
+    GstRtmpChunkHeader *previous_header);
+
 
 /* chunk cache */
 
