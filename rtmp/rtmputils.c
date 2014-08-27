@@ -70,3 +70,15 @@ gst_rtmp_bytes_append (GBytes * bytes, guint8 * data, gsize size)
 
   return g_bytes_new_take (outdata, size1 + size);
 }
+
+GBytes *
+gst_rtmp_bytes_remove (GBytes * bytes, gsize size)
+{
+  GBytes *new_bytes;
+
+  new_bytes =
+      g_bytes_new_from_bytes (bytes, size, g_bytes_get_size (bytes) - size);
+  g_bytes_unref (bytes);
+
+  return new_bytes;
+}

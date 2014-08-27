@@ -41,6 +41,7 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data);
 static void
 got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
+static void dump_chunk (GstRtmpChunk * chunk, gboolean dir);
 static gboolean periodic (gpointer user_data);
 
 GstRtmpServer *server;
@@ -51,9 +52,11 @@ GCancellable *cancellable;
 GstRtmpChunk *proxy_chunk;
 
 gboolean verbose;
+gboolean dump;
 
 static GOptionEntry entries[] = {
   {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
+  {"dump", 'd', 0, G_OPTION_ARG_NONE, &dump, "Dump packets", NULL},
   {NULL}
 };
 
@@ -80,9 +83,12 @@ main (int argc, char *argv[])
   gst_rtmp_server_start (server);
 
   client = gst_rtmp_client_new ();
+  gst_rtmp_client_set_server_address (client,
+      "ec2-54-189-67-158.us-west-2.compute.amazonaws.com");
   cancellable = g_cancellable_new ();
 
-  g_timeout_add (1000, periodic, NULL);
+  if (verbose)
+    g_timeout_add (1000, periodic, NULL);
 
   main_loop = g_main_loop_new (NULL, TRUE);
   g_main_loop_run (main_loop);
@@ -94,7 +100,7 @@ static void
 add_connection (GstRtmpServer * server, GstRtmpConnection * connection,
     gpointer user_data)
 {
-  GST_ERROR ("new connection");
+  GST_DEBUG ("new connection");
 
   g_signal_connect (connection, "got-chunk", G_CALLBACK (got_chunk), NULL);
 
@@ -107,23 +113,19 @@ static void
 got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data)
 {
-  GBytes *bytes;
   GstRtmpConnection *proxy_conn;
 
   GST_INFO ("got chunk");
-
-  bytes = gst_rtmp_chunk_get_payload (chunk);
-  if (0)
-    gst_rtmp_dump_data (bytes);
 
   proxy_conn = gst_rtmp_client_get_connection (client);
 
   g_object_ref (chunk);
   if (proxy_conn) {
-    GST_ERROR (">>>: %" G_GSIZE_FORMAT, chunk->message_length);
+    dump_chunk (chunk, TRUE);
     gst_rtmp_connection_queue_chunk (proxy_conn, chunk);
   } else {
-    GST_ERROR ("saving first chunk");
+    if (verbose)
+      g_print ("saving first chunk\n");
     /* save it for after the connection is complete */
     proxy_chunk = chunk;
   }
@@ -149,8 +151,7 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
 
     proxy_conn = gst_rtmp_client_get_connection (client);
     server_connection = proxy_conn;
-    GST_ERROR ("sending to server: %" G_GSIZE_FORMAT,
-        proxy_chunk->message_length);
+    dump_chunk (proxy_chunk, TRUE);
     gst_rtmp_connection_queue_chunk (proxy_conn, proxy_chunk);
     proxy_chunk = NULL;
   }
@@ -164,17 +165,11 @@ static void
 got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data)
 {
-  GBytes *bytes;
-
   GST_INFO ("got chunk");
 
+  dump_chunk (chunk, FALSE);
+
   g_object_ref (chunk);
-  GST_ERROR ("<<<: %" G_GSIZE_FORMAT, chunk->message_length);
-
-  bytes = gst_rtmp_chunk_get_payload (chunk);
-  if (0)
-    gst_rtmp_dump_data (bytes);
-
   gst_rtmp_connection_queue_chunk (client_connection, chunk);
 }
 
@@ -191,4 +186,18 @@ periodic (gpointer user_data)
     gst_rtmp_connection_dump (server_connection);
   }
   return G_SOURCE_CONTINUE;
+}
+
+static void
+dump_chunk (GstRtmpChunk * chunk, gboolean dir)
+{
+  if (!dump)
+    return;
+
+  g_print ("%s stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
+      " type_id:%-4d info:%08x\n", dir ? ">>>" : "<<<",
+      chunk->stream_id,
+      chunk->timestamp,
+      chunk->message_length, chunk->message_type_id, chunk->info);
+  gst_rtmp_dump_data (gst_rtmp_chunk_get_payload (chunk));
 }

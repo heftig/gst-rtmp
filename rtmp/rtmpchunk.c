@@ -292,7 +292,7 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
     memcpy (data + offset, chunkdata, chunksize);
     offset += chunksize;
   }
-  GST_ERROR ("type: %d in: %" G_GSIZE_FORMAT " out: %d", chunk->message_type_id,
+  GST_DEBUG ("type: %d in: %" G_GSIZE_FORMAT " out: %d", chunk->message_type_id,
       chunksize, offset);
 
   return g_bytes_new_take (data, offset);

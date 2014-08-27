@@ -58,8 +58,8 @@ struct _GstRtmpClient
   GObject object;
 
   /* properties */
-  char *host;
-  int port;
+  char *server_address;
+  int server_port;
   char *stream;
 
   /* private */
@@ -90,6 +90,8 @@ GType gst_rtmp_client_get_type (void);
 
 GstRtmpClient *gst_rtmp_client_new (void);
 void gst_rtmp_client_set_url (GstRtmpClient *client, const char *url);
+void gst_rtmp_client_set_server_address (GstRtmpClient * client, const char *host);
+void gst_rtmp_client_set_server_port (GstRtmpClient * client, int port);
 
 void gst_rtmp_client_connect_async (GstRtmpClient *client,
     GCancellable *cancellable, GAsyncReadyCallback callback,

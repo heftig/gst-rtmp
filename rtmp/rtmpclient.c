@@ -49,8 +49,13 @@ gst_rtmp_client_handshake_done (GObject * source, GAsyncResult * result,
 
 enum
 {
-  PROP_0
+  PROP_0,
+  PROP_SERVER_ADDRESS,
+  PROP_SERVER_PORT
 };
+
+#define DEFAULT_SERVER_ADDRESS ""
+#define DEFAULT_SERVER_PORT 1935
 
 /* pad templates */
 
@@ -75,6 +80,8 @@ gst_rtmp_client_class_init (GstRtmpClientClass * klass)
 static void
 gst_rtmp_client_init (GstRtmpClient * rtmpclient)
 {
+  rtmpclient->server_address = g_strdup (DEFAULT_SERVER_ADDRESS);
+  rtmpclient->server_port = DEFAULT_SERVER_PORT;
 }
 
 void
@@ -86,6 +93,13 @@ gst_rtmp_client_set_property (GObject * object, guint property_id,
   GST_DEBUG_OBJECT (rtmpclient, "set_property");
 
   switch (property_id) {
+    case PROP_SERVER_ADDRESS:
+      gst_rtmp_client_set_server_address (rtmpclient,
+          g_value_get_string (value));
+      break;
+    case PROP_SERVER_PORT:
+      gst_rtmp_client_set_server_port (rtmpclient, g_value_get_int (value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -101,6 +115,12 @@ gst_rtmp_client_get_property (GObject * object, guint property_id,
   GST_DEBUG_OBJECT (rtmpclient, "get_property");
 
   switch (property_id) {
+    case PROP_SERVER_ADDRESS:
+      g_value_set_string (value, rtmpclient->server_address);
+      break;
+    case PROP_SERVER_PORT:
+      g_value_set_int (value, rtmpclient->server_port);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -142,10 +162,17 @@ gst_rtmp_client_new (void)
 }
 
 void
-gst_rtmp_client_set_host (GstRtmpClient * client, const char *host)
+gst_rtmp_client_set_server_address (GstRtmpClient * client,
+    const char *server_address)
 {
-  g_free (client->host);
-  client->host = g_strdup (host);
+  g_free (client->server_address);
+  client->server_address = g_strdup (server_address);
+}
+
+void
+gst_rtmp_client_set_server_port (GstRtmpClient * client, int port)
+{
+  client->server_port = port;
 }
 
 void
@@ -177,9 +204,7 @@ gst_rtmp_client_connect_async (GstRtmpClient * client,
   client->cancellable = cancellable;
   client->async = async;
 
-  addr =
-      g_network_address_new
-      ("ec2-54-190-75-249.us-west-2.compute.amazonaws.com", 1935);
+  addr = g_network_address_new (client->server_address, client->server_port);
   client->socket_client = g_socket_client_new ();
 
   GST_DEBUG ("g_socket_client_connect_async");

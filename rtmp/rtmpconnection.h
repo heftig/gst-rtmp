@@ -60,6 +60,11 @@ struct _GstRtmpConnection
   GstRtmpChunkCache *input_chunk_cache;
   GstRtmpChunkCache *output_chunk_cache;
 
+  /* chunk currently being written */
+  GstRtmpChunk *output_chunk;
+  GBytes *output_bytes;
+
+  /* RTMP configuration */
   gsize in_chunk_size;
   gsize out_chunk_size;
 };
