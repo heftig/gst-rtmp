@@ -94,7 +94,7 @@ static void
 add_connection (GstRtmpServer * server, GstRtmpConnection * connection,
     gpointer user_data)
 {
-  GST_INFO ("new connection");
+  GST_ERROR ("new connection");
 
   g_signal_connect (connection, "got-chunk", G_CALLBACK (got_chunk), NULL);
 
@@ -172,7 +172,8 @@ got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   GST_ERROR ("<<<: %" G_GSIZE_FORMAT, chunk->message_length);
 
   bytes = gst_rtmp_chunk_get_payload (chunk);
-  gst_rtmp_dump_data (bytes);
+  if (0)
+    gst_rtmp_dump_data (bytes);
 
   gst_rtmp_connection_queue_chunk (client_connection, chunk);
 }

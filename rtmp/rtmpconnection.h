@@ -59,6 +59,9 @@ struct _GstRtmpConnection
   gboolean handshake_complete;
   GstRtmpChunkCache *input_chunk_cache;
   GstRtmpChunkCache *output_chunk_cache;
+
+  gsize in_chunk_size;
+  gsize out_chunk_size;
 };
 
 struct _GstRtmpConnectionClass

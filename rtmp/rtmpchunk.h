@@ -87,7 +87,7 @@ GstRtmpChunkParseStatus gst_rtmp_chunk_can_parse (GBytes *bytes,
 GstRtmpChunk * gst_rtmp_chunk_new_parse (GBytes *bytes, gsize *chunk_size,
     GstRtmpChunkCache *cache);
 GBytes * gst_rtmp_chunk_serialize (GstRtmpChunk *chunk,
-    GstRtmpChunkCache *cache);
+    GstRtmpChunkHeader *previous_header, gsize max_chunk_size);
 
 void gst_rtmp_chunk_set_stream_id (GstRtmpChunk *chunk, guint32 stream_id);
 void gst_rtmp_chunk_set_timestamp (GstRtmpChunk *chunk, guint32 timestamp);
@@ -108,8 +108,8 @@ GstRtmpChunkCache *gst_rtmp_chunk_cache_new (void);
 void gst_rtmp_chunk_cache_free (GstRtmpChunkCache *cache);
 GstRtmpChunkCacheEntry * gst_rtmp_chunk_cache_get (
     GstRtmpChunkCache *cache, int stream_id);
-void gst_rtmp_chunk_cache_update (GstRtmpChunkCache *cache,
-    GstRtmpChunk *chunk);
+void gst_rtmp_chunk_cache_update (GstRtmpChunkCacheEntry * entry,
+    GstRtmpChunk * chunk);
 
 G_END_DECLS
 
