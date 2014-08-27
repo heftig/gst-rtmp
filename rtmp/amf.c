@@ -35,7 +35,7 @@ struct _AmfObjectField
 typedef struct _AmfParser AmfParser;
 struct _AmfParser
 {
-  const char *data;
+  const guint8 *data;
   gsize size;
   int offset;
   gboolean error;
@@ -54,7 +54,8 @@ gst_amf_node_new (GstAmfType type)
 
   node = g_malloc0 (sizeof (GstAmfNode));
   node->type = type;
-  if (node->type == GST_AMF_TYPE_OBJECT) {
+  if (node->type == GST_AMF_TYPE_OBJECT ||
+      node->type == GST_AMF_TYPE_ECMA_ARRAY) {
     node->array_val = g_ptr_array_new ();
   }
 
@@ -92,7 +93,6 @@ _parse_u16 (AmfParser * parser)
   return x;
 }
 
-#if 0
 static int
 _parse_u24 (AmfParser * parser)
 {
@@ -114,6 +114,16 @@ _parse_u32 (AmfParser * parser)
       3];
   parser->offset += 4;
   return x;
+}
+
+#if 0
+static guint8 *
+_parse_array (AmfParser * parser, int size)
+{
+  guint8 *data;
+  data = g_memdup (parser->data + parser->offset, size);
+  parser->offset += size;
+  return data;
 }
 #endif
 
@@ -137,11 +147,12 @@ _parse_utf8_string (AmfParser * parser)
   char *s;
 
   size = _parse_u16 (parser);
-  if (parser->offset + size >= parser->size) {
+  if (parser->offset + size > parser->size) {
+    GST_ERROR ("string too long");
     parser->error = TRUE;
     return NULL;
   }
-  s = g_strndup (parser->data + parser->offset, size);
+  s = g_strndup ((gchar *) (parser->data + parser->offset), size);
   parser->offset += size;
 
   return s;
@@ -161,6 +172,33 @@ _parse_object (AmfParser * parser, GstAmfNode * node)
     }
     gst_amf_object_append_take (node, s, child_node);
   }
+}
+
+static void
+_parse_ecma_array (AmfParser * parser, GstAmfNode * node)
+{
+  int n_elements;
+  int i;
+
+  n_elements = _parse_u32 (parser);
+
+  /* FIXME This is weird.  The one time I've seen this, the encoded value
+   * was 0, but the number of elements was 1. */
+  if (n_elements != 0) {
+    GST_ERROR ("unimplemented, n_elements != 0");
+  }
+
+  if (n_elements == 0)
+    n_elements++;
+
+  for (i = 0; i < n_elements; i++) {
+    char *s;
+    GstAmfNode *child_node;
+    s = _parse_utf8_string (parser);
+    child_node = _parse_value (parser);
+    gst_amf_object_append_take (node, s, child_node);
+  }
+  _parse_u24 (parser);
 }
 
 static GstAmfNode *
@@ -188,14 +226,17 @@ _parse_value (AmfParser * parser)
       _parse_object (parser, node);
       break;
     case GST_AMF_TYPE_MOVIECLIP:
-      GST_ERROR ("unimplemented");
+      GST_ERROR ("unimplemented AMF type: movie clip");
       break;
     case GST_AMF_TYPE_NULL:
+      break;
+    case GST_AMF_TYPE_ECMA_ARRAY:
+      _parse_ecma_array (parser, node);
       break;
     case GST_AMF_TYPE_OBJECT_END:
       break;
     default:
-      GST_ERROR ("unimplemented");
+      GST_ERROR ("unimplemented AMF type %d", type);
       break;
   }
 
@@ -203,7 +244,7 @@ _parse_value (AmfParser * parser)
 }
 
 GstAmfNode *
-gst_amf_node_new_parse (const char *data, int size, int *n_bytes)
+gst_amf_node_new_parse (const guint8 * data, gsize size, gsize * n_bytes)
 {
   AmfParser _p = { 0 }, *parser = &_p;
   GstAmfNode *node;
@@ -250,7 +291,8 @@ gst_amf_object_append_take (GstAmfNode * node, char *s, GstAmfNode * child_node)
 {
   AmfObjectField *field;
 
-  g_return_if_fail (node->type == GST_AMF_TYPE_OBJECT);
+  g_return_if_fail (node->type == GST_AMF_TYPE_OBJECT ||
+      node->type == GST_AMF_TYPE_ECMA_ARRAY);
 
   field = g_malloc0 (sizeof (AmfObjectField));
   field->name = s;
@@ -264,4 +306,58 @@ amf_object_field_free (AmfObjectField * field)
   g_free (field->name);
   gst_amf_node_free (field->value);
   g_free (field);
+}
+
+void
+gst_amf_node_set_ecma_array (GstAmfNode * node, guint8 * data, int size)
+{
+  node->string_val = (char *) data;
+  node->int_val = size;
+}
+
+static void
+_gst_amf_node_dump (GstAmfNode * node, int indent)
+{
+  int i;
+
+  switch (node->type) {
+    case GST_AMF_TYPE_NUMBER:
+      g_print ("%g", node->double_val);
+      break;
+    case GST_AMF_TYPE_BOOLEAN:
+      g_print ("%s", node->int_val ? "True" : "False");
+      break;
+    case GST_AMF_TYPE_STRING:
+      g_print ("\"%s\"", node->string_val);
+      break;
+    case GST_AMF_TYPE_OBJECT:
+    case GST_AMF_TYPE_ECMA_ARRAY:
+      g_print ("{\n");
+      for (i = 0; i < node->array_val->len; i++) {
+        AmfObjectField *field = g_ptr_array_index (node->array_val, i);
+        g_print ("%*.*s  \"%s\": ", indent, indent, "", field->name);
+        _gst_amf_node_dump (field->value, indent + 2);
+        g_print (",\n");
+      }
+      g_print ("%*.*s}", indent, indent, "");
+      break;
+    case GST_AMF_TYPE_MOVIECLIP:
+      g_print ("MOVIE_CLIP");
+      break;
+    case GST_AMF_TYPE_NULL:
+      g_print ("Null");
+      break;
+    case GST_AMF_TYPE_OBJECT_END:
+      break;
+    default:
+      GST_ERROR ("unimplemented AMF type: %d", node->type);
+      break;
+  }
+}
+
+void
+gst_amf_node_dump (GstAmfNode * node)
+{
+  _gst_amf_node_dump (node, 0);
+  g_print ("\n");
 }

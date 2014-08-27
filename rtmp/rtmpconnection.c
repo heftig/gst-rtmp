@@ -335,29 +335,26 @@ G_GNUC_UNUSED static void
 parse_message (guint8 * data, int size)
 {
   int offset;
-  int bytes_read;
+  gsize bytes_read;
   GstAmfNode *node;
 
   offset = 4;
 
-  node = gst_amf_node_new_parse ((const char *) (data + offset),
-      size - offset, &bytes_read);
+  node = gst_amf_node_new_parse (data + offset, size - offset, &bytes_read);
   offset += bytes_read;
-  g_print ("bytes_read: %d\n", bytes_read);
+  g_print ("bytes_read: %" G_GSIZE_FORMAT "\n", bytes_read);
   if (node)
     gst_amf_node_free (node);
 
-  node = gst_amf_node_new_parse ((const char *) (data + offset),
-      size - offset, &bytes_read);
+  node = gst_amf_node_new_parse (data + offset, size - offset, &bytes_read);
   offset += bytes_read;
-  g_print ("bytes_read: %d\n", bytes_read);
+  g_print ("bytes_read: %" G_GSIZE_FORMAT "\n", bytes_read);
   if (node)
     gst_amf_node_free (node);
 
-  node = gst_amf_node_new_parse ((const char *) (data + offset),
-      size - offset, &bytes_read);
+  node = gst_amf_node_new_parse (data + offset, size - offset, &bytes_read);
   offset += bytes_read;
-  g_print ("bytes_read: %d\n", bytes_read);
+  g_print ("bytes_read: %" G_GSIZE_FORMAT "\n", bytes_read);
   if (node)
     gst_amf_node_free (node);
 

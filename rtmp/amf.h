@@ -57,13 +57,15 @@ typedef struct _GstAmfNode GstAmfNode;
 
 GstAmfNode * gst_amf_node_new (GstAmfType type);
 void gst_amf_node_free (GstAmfNode *node);
+void gst_amf_node_dump (GstAmfNode *node);
 
-GstAmfNode * gst_amf_node_new_parse (const char *data, int size, int *n_bytes);
+GstAmfNode * gst_amf_node_new_parse (const guint8 *data, gsize size, gsize *n_bytes);
 
 void gst_amf_node_set_boolean (GstAmfNode *node, gboolean val);
 void gst_amf_node_set_double (GstAmfNode *node, double val);
 void gst_amf_node_set_string (GstAmfNode *node, const char *s);
 void gst_amf_node_set_string_take (GstAmfNode *node, char *s);
+void gst_amf_node_set_ecma_array (GstAmfNode *node, guint8 *data, int size);
 void gst_amf_object_append_take (GstAmfNode *node, char *s, GstAmfNode *child_node);
 
 
