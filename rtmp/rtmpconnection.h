@@ -22,6 +22,7 @@
 
 #include <gio/gio.h>
 #include <rtmp/rtmpchunk.h>
+#include <rtmp/amf.h>
 
 G_BEGIN_DECLS
 
@@ -76,6 +77,9 @@ struct _GstRtmpConnectionClass
   /* signals */
   void (*got_chunk) (GstRtmpConnection *connection,
       GstRtmpChunk *chunk);
+  void (*got_command) (GstRtmpConnection *connection,
+      const char *command_name, int transaction_id,
+      GstAmfNode *command_object, GstAmfNode *option_args);
 };
 
 GType gst_rtmp_connection_get_type (void);
@@ -87,6 +91,11 @@ void gst_rtmp_connection_start_handshake (GstRtmpConnection *connection,
 void gst_rtmp_connection_queue_chunk (GstRtmpConnection *connection,
     GstRtmpChunk *chunk);
 void gst_rtmp_connection_dump (GstRtmpConnection *connection);
+
+int gst_rtmp_connection_send_command (GstRtmpConnection *connection,
+    int stream_id, const char *command_name, int transaction_id,
+    GstAmfNode *command_object, GstAmfNode *optional_args);
+
 
 G_END_DECLS
 

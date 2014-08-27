@@ -21,6 +21,7 @@
 #include "config.h"
 #endif
 
+#include <string.h>
 #include <gst/gst.h>
 
 #include "amf.h"
@@ -41,10 +42,21 @@ struct _AmfParser
   gboolean error;
 };
 
+typedef struct _AmfSerializer AmfSerializer;
+struct _AmfSerializer
+{
+  guint8 *data;
+  gsize size;
+  int offset;
+  gboolean error;
+};
+
 static char *_parse_utf8_string (AmfParser * parser);
 static void _parse_object (AmfParser * parser, GstAmfNode * node);
 static GstAmfNode *_parse_value (AmfParser * parser);
 static void amf_object_field_free (AmfObjectField * field);
+static void _serialize_object (AmfSerializer * serializer, GstAmfNode * node);
+static void _serialize_value (AmfSerializer * serializer, GstAmfNode * node);
 
 
 GstAmfNode *
@@ -127,8 +139,8 @@ _parse_array (AmfParser * parser, int size)
 }
 #endif
 
-static int
-_parse_double (AmfParser * parser)
+static double
+_parse_number (AmfParser * parser)
 {
   double d;
   int i;
@@ -214,7 +226,7 @@ _parse_value (AmfParser * parser)
 
   switch (type) {
     case GST_AMF_TYPE_NUMBER:
-      gst_amf_node_set_double (node, _parse_double (parser));
+      gst_amf_node_set_number (node, _parse_number (parser));
       break;
     case GST_AMF_TYPE_BOOLEAN:
       gst_amf_node_set_boolean (node, _parse_u8 (parser));
@@ -266,7 +278,7 @@ gst_amf_node_set_boolean (GstAmfNode * node, gboolean val)
 }
 
 void
-gst_amf_node_set_double (GstAmfNode * node, double val)
+gst_amf_node_set_number (GstAmfNode * node, double val)
 {
   g_return_if_fail (node->type == GST_AMF_TYPE_NUMBER);
   node->double_val = val;
@@ -287,7 +299,8 @@ gst_amf_node_set_string_take (GstAmfNode * node, char *s)
 }
 
 void
-gst_amf_object_append_take (GstAmfNode * node, char *s, GstAmfNode * child_node)
+gst_amf_object_append_take (GstAmfNode * node, const char *s,
+    GstAmfNode * child_node)
 {
   AmfObjectField *field;
 
@@ -295,7 +308,7 @@ gst_amf_object_append_take (GstAmfNode * node, char *s, GstAmfNode * child_node)
       node->type == GST_AMF_TYPE_ECMA_ARRAY);
 
   field = g_malloc0 (sizeof (AmfObjectField));
-  field->name = s;
+  field->name = g_strdup (s);
   field->value = child_node;
   g_ptr_array_add (node->array_val, field);
 }
@@ -314,6 +327,29 @@ gst_amf_node_set_ecma_array (GstAmfNode * node, guint8 * data, int size)
   node->string_val = (char *) data;
   node->int_val = size;
 }
+
+void
+gst_amf_object_set_number (GstAmfNode * node, const char *field_name,
+    double val)
+{
+  GstAmfNode *child_node;
+
+  child_node = gst_amf_node_new (GST_AMF_TYPE_NUMBER);
+  gst_amf_node_set_number (child_node, val);
+  gst_amf_object_append_take (node, field_name, child_node);
+}
+
+void
+gst_amf_object_set_string (GstAmfNode * node, const char *field_name,
+    const char *s)
+{
+  GstAmfNode *child_node;
+
+  child_node = gst_amf_node_new (GST_AMF_TYPE_STRING);
+  gst_amf_node_set_string (child_node, s);
+  gst_amf_object_append_take (node, field_name, child_node);
+}
+
 
 static void
 _gst_amf_node_dump (GstAmfNode * node, int indent)
@@ -360,4 +396,172 @@ gst_amf_node_dump (GstAmfNode * node)
 {
   _gst_amf_node_dump (node, 0);
   g_print ("\n");
+}
+
+static gboolean
+_serialize_check (AmfSerializer * serializer, int value)
+{
+  if (serializer->offset + value > serializer->size) {
+    serializer->error = TRUE;
+  }
+  return !serializer->error;
+}
+
+static void
+_serialize_u8 (AmfSerializer * serializer, int value)
+{
+  if (_serialize_check (serializer, 1)) {
+    serializer->data[serializer->offset] = value;
+    serializer->offset++;
+  }
+}
+
+static void
+_serialize_u16 (AmfSerializer * serializer, int value)
+{
+  if (_serialize_check (serializer, 2)) {
+    serializer->data[serializer->offset] = (value >> 8) & 0xff;
+    serializer->data[serializer->offset + 1] = value & 0xff;
+    serializer->offset += 2;
+  }
+}
+
+#if 0
+static void
+_serialize_u24 (AmfSerializer * serializer, int value)
+{
+  if (_serialize_check (serializer, 3)) {
+    serializer->data[serializer->offset] = (value >> 16) & 0xff;
+    serializer->data[serializer->offset + 1] = (value >> 8) & 0xff;
+    serializer->data[serializer->offset + 2] = value & 0xff;
+    serializer->offset += 3;
+  }
+}
+#endif
+
+static void
+_serialize_u32 (AmfSerializer * serializer, int value)
+{
+  if (_serialize_check (serializer, 4)) {
+    serializer->data[serializer->offset] = (value >> 24) & 0xff;
+    serializer->data[serializer->offset + 1] = (value >> 16) & 0xff;
+    serializer->data[serializer->offset + 2] = (value >> 8) & 0xff;
+    serializer->data[serializer->offset + 3] = value & 0xff;
+    serializer->offset += 4;
+  }
+}
+
+static void
+_serialize_number (AmfSerializer * serializer, double value)
+{
+  if (_serialize_check (serializer, 8)) {
+    guint8 *d_ptr = (guint8 *) & value;
+    int i;
+
+    for (i = 0; i < 8; i++) {
+      serializer->data[serializer->offset + i] = d_ptr[7 - i];
+    }
+    serializer->offset += 8;
+  }
+}
+
+static void
+_serialize_utf8_string (AmfSerializer * serializer, const char *s)
+{
+  int size;
+
+  size = strlen (s);
+  if (_serialize_check (serializer, 2 + size)) {
+    serializer->data[serializer->offset] = (size >> 8) & 0xff;
+    serializer->data[serializer->offset + 1] = size & 0xff;
+    memcpy (serializer->data + serializer->offset + 2, s, size);
+    serializer->offset += 2 + size;
+  }
+}
+
+static void
+_serialize_object (AmfSerializer * serializer, GstAmfNode * node)
+{
+  int i;
+
+  for (i = 0; i < node->array_val->len; i++) {
+    AmfObjectField *field = g_ptr_array_index (node->array_val, i);
+    _serialize_utf8_string (serializer, field->name);
+    _serialize_value (serializer, field->value);
+  }
+  _serialize_u16 (serializer, 0);
+  _serialize_u8 (serializer, GST_AMF_TYPE_OBJECT_END);
+}
+
+static void
+_serialize_ecma_array (AmfSerializer * serializer, GstAmfNode * node)
+{
+  int i;
+
+  _serialize_u32 (serializer, 0);
+  for (i = 0; i < node->array_val->len; i++) {
+    AmfObjectField *field = g_ptr_array_index (node->array_val, i);
+    _serialize_utf8_string (serializer, field->name);
+    _serialize_value (serializer, field->value);
+  }
+  _serialize_u16 (serializer, 0);
+  _serialize_u8 (serializer, GST_AMF_TYPE_OBJECT_END);
+}
+
+static void
+_serialize_value (AmfSerializer * serializer, GstAmfNode * node)
+{
+  _serialize_u8 (serializer, node->type);
+  switch (node->type) {
+    case GST_AMF_TYPE_NUMBER:
+      _serialize_number (serializer, node->double_val);
+      break;
+    case GST_AMF_TYPE_BOOLEAN:
+      _serialize_u8 (serializer, ! !node->int_val);
+      break;
+    case GST_AMF_TYPE_STRING:
+      _serialize_utf8_string (serializer, node->string_val);
+      break;
+    case GST_AMF_TYPE_OBJECT:
+      _serialize_object (serializer, node);
+      break;
+    case GST_AMF_TYPE_MOVIECLIP:
+      GST_ERROR ("unimplemented AMF type: movie clip");
+      serializer->error = TRUE;
+      break;
+    case GST_AMF_TYPE_NULL:
+      break;
+    case GST_AMF_TYPE_ECMA_ARRAY:
+      _serialize_ecma_array (serializer, node);
+      break;
+    case GST_AMF_TYPE_OBJECT_END:
+      break;
+    default:
+      GST_ERROR ("unimplemented AMF type %d", node->type);
+      serializer->error = TRUE;
+      break;
+  }
+}
+
+GBytes *
+gst_amf_serialize_command (const char *command_name, int transaction_id,
+    GstAmfNode * command_object, GstAmfNode * optional_args)
+{
+  AmfSerializer _s = { 0 }, *serializer = &_s;
+
+  serializer->size = 4096;
+  serializer->data = g_malloc (serializer->size);
+
+  _serialize_utf8_string (serializer, command_name);
+  _serialize_number (serializer, transaction_id);
+  _serialize_object (serializer, command_object);
+  if (optional_args)
+    _serialize_object (serializer, optional_args);
+
+  if (serializer->error) {
+    GST_ERROR ("failed to serialize");
+    g_free (serializer->data);
+    return NULL;
+  }
+  return g_bytes_new_take (serializer->data, serializer->offset);
 }

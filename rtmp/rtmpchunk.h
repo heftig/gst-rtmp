@@ -64,7 +64,6 @@ struct _GstRtmpChunk
   guint32 info;
 
   GBytes *payload;
-  gpointer priv;
 };
 
 struct _GstRtmpChunkClass

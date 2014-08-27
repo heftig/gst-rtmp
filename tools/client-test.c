@@ -25,18 +25,28 @@
 #include <gio/gio.h>
 #include <stdlib.h>
 #include "rtmpclient.h"
+#include "rtmputils.h"
+
 
 #define GETTEXT_PACKAGE NULL
 
+GstRtmpClient *client;
+GstRtmpConnection *connection;
+
 gboolean verbose;
+gboolean dump;
 
 static GOptionEntry entries[] = {
   {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
+  {"dump", 'd', 0, G_OPTION_ARG_NONE, &dump, "Dump packets", NULL},
   {NULL}
 };
 
-static void
-connect_done (GObject * source, GAsyncResult * result, gpointer user_data);
+static void connect_done (GObject * source, GAsyncResult * result,
+    gpointer user_data);
+static void send_connect (void);
+static void got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    gpointer user_data);
 
 int
 main (int argc, char *argv[])
@@ -44,7 +54,6 @@ main (int argc, char *argv[])
   GError *error = NULL;
   GOptionContext *context;
   GMainLoop *main_loop;
-  GstRtmpClient *client;
   GCancellable *cancellable;
 
   context = g_option_context_new ("- FIXME");
@@ -58,6 +67,8 @@ main (int argc, char *argv[])
 
 
   client = gst_rtmp_client_new ();
+  gst_rtmp_client_set_server_address (client,
+      "ec2-54-189-67-158.us-west-2.compute.amazonaws.com");
   cancellable = g_cancellable_new ();
 
   main_loop = g_main_loop_new (NULL, TRUE);
@@ -83,4 +94,64 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
   }
 
   GST_ERROR ("got here");
+
+  connection = gst_rtmp_client_get_connection (client);
+  g_signal_connect (connection, "got-chunk", G_CALLBACK (got_chunk), NULL);
+
+  send_connect ();
+}
+
+static void
+send_connect (void)
+{
+  GstAmfNode *node;
+
+  node = gst_amf_node_new (GST_AMF_TYPE_OBJECT);
+  gst_amf_object_set_string (node, "app", "live");
+  gst_amf_object_set_string (node, "type", "nonprivate");
+  gst_amf_object_set_string (node, "tcUrl", "rtmp://localhost:1935/live");
+  gst_rtmp_connection_send_command (connection, 3, "connect", 1, node, NULL);
+}
+
+static void
+dump_command (GstRtmpChunk * chunk)
+{
+  GstAmfNode *amf;
+  gsize size;
+  const guint8 *data;
+  gsize n_parsed;
+  int offset;
+
+  offset = 0;
+  data = g_bytes_get_data (chunk->payload, &size);
+  while (offset < size) {
+    amf = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
+    gst_amf_node_dump (amf);
+    gst_amf_node_free (amf);
+    offset += n_parsed;
+  }
+}
+
+static void
+dump_chunk (GstRtmpChunk * chunk, gboolean dir)
+{
+  if (!dump)
+    return;
+
+  g_print ("%s stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
+      " type_id:%-4d info:%08x\n", dir ? ">>>" : "<<<",
+      chunk->stream_id,
+      chunk->timestamp,
+      chunk->message_length, chunk->message_type_id, chunk->info);
+  if (chunk->stream_id == 3 && chunk->message_type_id == 20) {
+    dump_command (chunk);
+  }
+  gst_rtmp_dump_data (gst_rtmp_chunk_get_payload (chunk));
+}
+
+static void
+got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    gpointer user_data)
+{
+  dump_chunk (chunk, TRUE);
 }

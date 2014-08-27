@@ -530,13 +530,16 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
         GST_DEBUG ("got protocol control message, type: %d",
             entry->chunk->message_type_id);
         gst_rtmp_connection_handle_pcm (sc, entry->chunk);
-        g_object_unref (entry->chunk);
+        g_signal_emit_by_name (sc, "got-control-chunk", entry->chunk);
+      } else if (entry->chunk->message_type_id == 0x14) {
+        /* FIXME parse command */
+        g_signal_emit_by_name (sc, "got-command", entry->chunk);
       } else {
         GST_DEBUG ("got chunk: %" G_GSIZE_FORMAT " bytes",
             entry->chunk->message_length);
         g_signal_emit_by_name (sc, "got-chunk", entry->chunk);
-        g_object_unref (entry->chunk);
       }
+      g_object_unref (entry->chunk);
 
       entry->chunk = NULL;
       entry->offset = 0;
@@ -597,7 +600,6 @@ gst_rtmp_connection_queue_chunk (GstRtmpConnection * connection,
   g_return_if_fail (GST_IS_RTMP_CONNECTION (connection));
   g_return_if_fail (GST_IS_RTMP_CHUNK (chunk));
 
-  chunk->priv = connection;
   g_queue_push_tail (connection->output_queue, chunk);
   gst_rtmp_connection_start_output (connection);
 }
@@ -763,4 +765,25 @@ gst_rtmp_connection_dump (GstRtmpConnection * connection)
       connection->input_bytes ? g_bytes_get_size (connection->input_bytes) : 0);
   g_print ("  needed: %" G_GSIZE_FORMAT "\n", connection->input_needed_bytes);
 
+}
+
+int
+gst_rtmp_connection_send_command (GstRtmpConnection * connection, int stream_id,
+    const char *command_name, int transaction_id, GstAmfNode * command_object,
+    GstAmfNode * optional_args)
+{
+  GstRtmpChunk *chunk;
+
+  chunk = gst_rtmp_chunk_new ();
+  chunk->stream_id = stream_id;
+  chunk->timestamp = 0;         /* FIXME */
+  chunk->message_type_id = 0x14;
+  chunk->info = 0;              /* FIXME */
+
+  chunk->payload = gst_amf_serialize_command (command_name, transaction_id,
+      command_object, optional_args);
+
+  gst_rtmp_connection_queue_chunk (connection, chunk);
+
+  return transaction_id;
 }
