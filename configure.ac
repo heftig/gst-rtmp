@@ -144,6 +144,7 @@ rtmp/Makefile
 pkgconfig/Makefile
 pkgconfig/gst-rtmp-uninstalled.pc
 pkgconfig/gst-rtmp.pc
+plugins/Makefile
 tools/Makefile
 doc/version.entities
 ])

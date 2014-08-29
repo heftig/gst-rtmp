@@ -1,7 +1,7 @@
 
 AUTOMAKE_OPTIONS = foreign
 
-SUBDIRS = rtmp tools pkgconfig doc
+SUBDIRS = rtmp tools plugins pkgconfig doc
 
 EXTRA_DIST = autogen.sh gtk-doc.mak HACKING TODO BUGS README
 
