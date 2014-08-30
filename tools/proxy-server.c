@@ -85,7 +85,7 @@ main (int argc, char *argv[])
 
   client = gst_rtmp_client_new ();
   gst_rtmp_client_set_server_address (client,
-      "ec2-54-189-67-158.us-west-2.compute.amazonaws.com");
+      "ec2-54-185-55-241.us-west-2.compute.amazonaws.com");
   cancellable = g_cancellable_new ();
 
   if (verbose)
@@ -219,7 +219,7 @@ dump_chunk (GstRtmpChunk * chunk, gboolean dir)
       chunk->stream_id,
       chunk->timestamp,
       chunk->message_length, chunk->message_type_id, chunk->info);
-  if (chunk->stream_id == 3 && chunk->message_type_id == 20) {
+  if (chunk->message_type_id == 0x14 || chunk->message_type_id == 0x18) {
     dump_command (chunk);
   }
   gst_rtmp_dump_data (gst_rtmp_chunk_get_payload (chunk));

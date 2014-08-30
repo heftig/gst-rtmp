@@ -193,8 +193,8 @@ gst_rtmp_chunk_parse_header2 (GstRtmpChunkHeader * header, GBytes * bytes,
     header->message_type_id = data[offset];
     offset += 1;
 
-    header->info = (data[offset] << 24) | (data[offset + 1] << 16) |
-        (data[offset + 2] << 8) | data[offset + 3];
+    header->info = (data[offset + 3] << 24) | (data[offset + 2] << 16) |
+        (data[offset + 1] << 8) | data[offset];
     offset += 4;
   } else {
     header->timestamp = previous_header->timestamp;
@@ -262,10 +262,10 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
     data[5] = (chunk->message_length >> 8) & 0xff;
     data[6] = chunk->message_length & 0xff;
     data[7] = chunk->message_type_id;
-    data[8] = (chunk->info >> 24) & 0xff;
-    data[9] = (chunk->info >> 16) & 0xff;
-    data[10] = (chunk->info >> 8) & 0xff;
-    data[11] = chunk->info & 0xff;
+    data[8] = chunk->info & 0xff;
+    data[9] = (chunk->info >> 8) & 0xff;
+    data[10] = (chunk->info >> 16) & 0xff;
+    data[11] = (chunk->info >> 24) & 0xff;
     offset = 12;
   } else {
     data[1] = (timestamp >> 16) & 0xff;
@@ -376,4 +376,55 @@ gst_rtmp_chunk_cache_update (GstRtmpChunkCacheEntry * entry,
   entry->previous_header.message_length = chunk->message_length;
   entry->previous_header.message_type_id = chunk->message_type_id;
   entry->previous_header.info = chunk->info;
+}
+
+gboolean
+gst_rtmp_chunk_parse_message (GstRtmpChunk * chunk, char **command_name,
+    double *transaction_id, GstAmfNode ** command_object,
+    GstAmfNode ** optional_args)
+{
+  gsize n_parsed;
+  const guint8 *data;
+  gsize size;
+  int offset;
+  GstAmfNode *n1, *n2, *n3, *n4;
+
+  offset = 0;
+  data = g_bytes_get_data (chunk->payload, &size);
+  n1 = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
+  offset += n_parsed;
+  n2 = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
+  offset += n_parsed;
+  n3 = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
+  offset += n_parsed;
+  if (offset < size) {
+    n4 = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
+  } else {
+    n4 = NULL;
+  }
+
+  if (command_name) {
+    *command_name = g_strdup (gst_amf_node_get_string (n1));
+  }
+  gst_amf_node_free (n1);
+
+  if (transaction_id) {
+    *transaction_id = gst_amf_node_get_number (n2);
+  }
+  gst_amf_node_free (n2);
+
+  if (command_object) {
+    *command_object = n3;
+  } else {
+    gst_amf_node_free (n3);
+  }
+
+  if (optional_args) {
+    *optional_args = n4;
+  } else {
+    if (n4)
+      gst_amf_node_free (n4);
+  }
+
+  return TRUE;
 }

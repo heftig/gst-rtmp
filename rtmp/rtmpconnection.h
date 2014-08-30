@@ -35,6 +35,10 @@ G_BEGIN_DECLS
 typedef struct _GstRtmpConnection GstRtmpConnection;
 typedef struct _GstRtmpConnectionClass GstRtmpConnectionClass;
 typedef void (*GstRtmpConnectionCallback) (GstRtmpConnection *connection);
+typedef void (*GstRtmpCommandCallback) (GstRtmpConnection *connection,
+    GstRtmpChunk *chunk, const char *command_name, int transaction_id,
+    GstAmfNode *command_object, GstAmfNode *optional_args,
+    gpointer user_data);
 
 struct _GstRtmpConnection
 {
@@ -42,6 +46,7 @@ struct _GstRtmpConnection
 
   /* should be properties */
   gboolean input_paused;
+  gboolean closed;
 
   /* private */
   GSocketConnection *connection;
@@ -60,6 +65,7 @@ struct _GstRtmpConnection
   gboolean handshake_complete;
   GstRtmpChunkCache *input_chunk_cache;
   GstRtmpChunkCache *output_chunk_cache;
+  GList *command_callbacks;
 
   /* chunk currently being written */
   GstRtmpChunk *output_chunk;
@@ -75,11 +81,10 @@ struct _GstRtmpConnectionClass
   GObjectClass object_class;
 
   /* signals */
-  void (*got_chunk) (GstRtmpConnection *connection,
+  void (*got_chunk) (GstRtmpConnection *connection, GstRtmpChunk *chunk);
+  void (*got_control_chunk) (GstRtmpConnection *connection,
       GstRtmpChunk *chunk);
-  void (*got_command) (GstRtmpConnection *connection,
-      const char *command_name, int transaction_id,
-      GstAmfNode *command_object, GstAmfNode *option_args);
+  void (*closed) (GstRtmpConnection *connection);
 };
 
 GType gst_rtmp_connection_get_type (void);
@@ -94,7 +99,13 @@ void gst_rtmp_connection_dump (GstRtmpConnection *connection);
 
 int gst_rtmp_connection_send_command (GstRtmpConnection *connection,
     int stream_id, const char *command_name, int transaction_id,
-    GstAmfNode *command_object, GstAmfNode *optional_args);
+    GstAmfNode *command_object, GstAmfNode *optional_args,
+    GstRtmpCommandCallback response_command, gpointer user_data);
+int gst_rtmp_connection_send_command2 (GstRtmpConnection *connection,
+    int chunk_stream_id, int stream_id, const char *command_name,
+    int transaction_id, GstAmfNode *command_object, GstAmfNode *optional_args,
+    GstAmfNode *n3, GstAmfNode *n4,
+    GstRtmpCommandCallback response_command, gpointer user_data);
 
 
 G_END_DECLS

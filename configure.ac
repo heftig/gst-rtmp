@@ -131,7 +131,7 @@ AM_CONDITIONAL(HAVE_FALSE, false)
 GST_RTMP_CFLAGS="$GST_RTMP_CFLAGS -I\$(top_srcdir)"
 AC_SUBST(GST_RTMP_CFLAGS)
 
-GST_RTMP_LIBS="\$(top_builddir)/gst-rtmp/libgss-$GST_API_VERSION.la"
+GST_RTMP_LIBS="\$(top_builddir)/rtmp/libgstrtmp-$GST_API_VERSION.la"
 AC_SUBST(GST_RTMP_LIBS)
 
 

@@ -24,6 +24,7 @@
 #include <gst/gst.h>
 #include <gio/gio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "rtmpclient.h"
 #include "rtmputils.h"
 
@@ -44,9 +45,20 @@ static GOptionEntry entries[] = {
 
 static void connect_done (GObject * source, GAsyncResult * result,
     gpointer user_data);
+static void cmd_connect_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
+    const char *command_name, int transaction_id, GstAmfNode *command_object,
+    GstAmfNode *optional_args, gpointer user_data);
 static void send_connect (void);
 static void got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
+static void send_create_stream (void);
+static void create_stream_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
+    const char *command_name, int transaction_id, GstAmfNode *command_object,
+    GstAmfNode *optional_args, gpointer user_data);
+static void send_play (void);
+static void play_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
+    const char *command_name, int transaction_id, GstAmfNode *command_object,
+    GstAmfNode *optional_args, gpointer user_data);
 
 int
 main (int argc, char *argv[])
@@ -68,7 +80,7 @@ main (int argc, char *argv[])
 
   client = gst_rtmp_client_new ();
   gst_rtmp_client_set_server_address (client,
-      "ec2-54-189-67-158.us-west-2.compute.amazonaws.com");
+      "ec2-54-185-55-241.us-west-2.compute.amazonaws.com");
   cancellable = g_cancellable_new ();
 
   main_loop = g_main_loop_new (NULL, TRUE);
@@ -91,26 +103,13 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
   if (!ret) {
     GST_ERROR ("error: %s", error->message);
     g_error_free (error);
+    return;
   }
-
-  GST_ERROR ("got here");
 
   connection = gst_rtmp_client_get_connection (client);
   g_signal_connect (connection, "got-chunk", G_CALLBACK (got_chunk), NULL);
 
   send_connect ();
-}
-
-static void
-send_connect (void)
-{
-  GstAmfNode *node;
-
-  node = gst_amf_node_new (GST_AMF_TYPE_OBJECT);
-  gst_amf_object_set_string (node, "app", "live");
-  gst_amf_object_set_string (node, "type", "nonprivate");
-  gst_amf_object_set_string (node, "tcUrl", "rtmp://localhost:1935/live");
-  gst_rtmp_connection_send_command (connection, 3, "connect", 1, node, NULL);
 }
 
 static void
@@ -143,7 +142,10 @@ dump_chunk (GstRtmpChunk * chunk, gboolean dir)
       chunk->stream_id,
       chunk->timestamp,
       chunk->message_length, chunk->message_type_id, chunk->info);
-  if (chunk->stream_id == 3 && chunk->message_type_id == 20) {
+  if (chunk->message_type_id == 20) {
+    dump_command (chunk);
+  }
+  if (chunk->message_type_id == 18) {
     dump_command (chunk);
   }
   gst_rtmp_dump_data (gst_rtmp_chunk_get_payload (chunk));
@@ -153,5 +155,119 @@ static void
 got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data)
 {
-  dump_chunk (chunk, TRUE);
+  dump_chunk (chunk, FALSE);
 }
+
+static void
+send_connect (void)
+{
+  GstAmfNode *node;
+
+  node = gst_amf_node_new (GST_AMF_TYPE_OBJECT);
+  gst_amf_object_set_string (node, "app", "live");
+  gst_amf_object_set_string (node, "type", "nonprivate");
+  gst_amf_object_set_string (node, "tcUrl", "rtmp://localhost:1935/live");
+  // "fpad": False,
+  // "capabilities": 15,
+  // "audioCodecs": 3191,
+  // "videoCodecs": 252,
+  // "videoFunction": 1,
+  gst_rtmp_connection_send_command (connection, 3, "connect", 1, node, NULL, cmd_connect_done, NULL);
+}
+
+static void
+cmd_connect_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
+    const char *command_name, int transaction_id, GstAmfNode *command_object,
+    GstAmfNode *optional_args, gpointer user_data)
+{
+  gboolean ret;
+
+  ret = FALSE;
+  if (optional_args) {
+    const GstAmfNode *n;
+    n = gst_amf_node_get_object (optional_args, "code");
+    if (n) {
+      const char *s;
+      s = gst_amf_node_get_string (n);
+      if (strcmp (s, "NetConnection.Connect.Success") == 0) {
+        ret = TRUE;
+      }
+    }
+  }
+
+  if (ret) {
+    GST_ERROR("success");
+
+    send_create_stream ();
+  }
+}
+
+static void
+send_create_stream (void)
+{
+  GstAmfNode *node;
+
+  node = gst_amf_node_new (GST_AMF_TYPE_NULL);
+  gst_rtmp_connection_send_command (connection, 3, "createStream", 2, node, NULL, create_stream_done, NULL);
+
+}
+
+static void
+create_stream_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
+    const char *command_name, int transaction_id, GstAmfNode *command_object,
+    GstAmfNode *optional_args, gpointer user_data)
+{
+  gboolean ret;
+  int stream_id;
+
+  ret = FALSE;
+  if (optional_args) {
+   stream_id = gst_amf_node_get_number (optional_args);
+   ret = TRUE;
+  }
+
+  if (ret) {
+    GST_ERROR("createStream success, stream_id=%d", stream_id);
+
+    send_play ();
+  }
+}
+
+static void
+send_play (void)
+{
+  GstAmfNode *n1;
+  GstAmfNode *n2;
+  GstAmfNode *n3;
+
+  n1 = gst_amf_node_new (GST_AMF_TYPE_NULL);
+  n2 = gst_amf_node_new (GST_AMF_TYPE_STRING);
+  gst_amf_node_set_string (n2, "myStream");
+  n3 = gst_amf_node_new (GST_AMF_TYPE_NUMBER);
+  gst_amf_node_set_number (n3, 0);
+  gst_rtmp_connection_send_command2 (connection, 8, 1, "play", 3, n1, n2, n3, NULL, play_done, NULL);
+
+}
+
+static void
+play_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
+    const char *command_name, int transaction_id, GstAmfNode *command_object,
+    GstAmfNode *optional_args, gpointer user_data)
+{
+  gboolean ret;
+  int stream_id;
+
+  ret = FALSE;
+  if (optional_args) {
+   stream_id = gst_amf_node_get_number (optional_args);
+   ret = TRUE;
+  }
+
+  if (ret) {
+    GST_ERROR("play success, stream_id=%d", stream_id);
+
+  }
+}
+
+
+

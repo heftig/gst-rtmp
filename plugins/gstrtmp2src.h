@@ -20,7 +20,9 @@
 #ifndef _GST_RTMP2_SRC_H_
 #define _GST_RTMP2_SRC_H_
 
-#include <gst/base/gstbasesrc.h>
+#include <gst/base/gstpushsrc.h>
+#include <rtmp/rtmpclient.h>
+#include <rtmp/rtmputils.h>
 
 G_BEGIN_DECLS
 
@@ -35,13 +37,25 @@ typedef struct _GstRtmp2SrcClass GstRtmp2SrcClass;
 
 struct _GstRtmp2Src
 {
-  GstBaseSrc base_rtmp2src;
+  GstPushSrc base_rtmp2src;
 
+  char *uri;
+
+  GMutex lock;
+  GCond cond;
+  GQueue *queue;
+  gboolean reset;
+  GstTask *task;
+  GRecMutex task_lock;
+
+  GstRtmpClient *client;
+  GstRtmpConnection *connection;
+  gboolean dump;
 };
 
 struct _GstRtmp2SrcClass
 {
-  GstBaseSrcClass base_rtmp2src_class;
+  GstPushSrcClass base_rtmp2src_class;
 };
 
 GType gst_rtmp2_src_get_type (void);

@@ -70,6 +70,13 @@ void gst_amf_node_set_ecma_array (GstAmfNode *node, guint8 *data, int size);
 void gst_amf_object_append_take (GstAmfNode *node, const char *s,
     GstAmfNode *child_node);
 
+gboolean gst_amf_node_get_boolean (const GstAmfNode *node);
+const char *gst_amf_node_get_string (const GstAmfNode *node);
+double gst_amf_node_get_number (const GstAmfNode *node);
+const GstAmfNode *gst_amf_node_get_object (const GstAmfNode *node, const char *field_name);
+int gst_amf_node_get_object_length (const GstAmfNode *node);
+const GstAmfNode *gst_amf_node_get_object_by_index (const GstAmfNode *node, int i);
+
 void gst_amf_object_set_number (GstAmfNode *node, const char *field_name,
     double val);
 void gst_amf_object_set_string (GstAmfNode *node, const char *field_name,
@@ -77,6 +84,9 @@ void gst_amf_object_set_string (GstAmfNode *node, const char *field_name,
 
 GBytes * gst_amf_serialize_command (const char *command_name,
     int transaction_id, GstAmfNode *command_object, GstAmfNode *optional_args);
+GBytes * gst_amf_serialize_command2 (const char *command_name,
+    int transaction_id, GstAmfNode *command_object, GstAmfNode *optional_args,
+    GstAmfNode *n3, GstAmfNode *n4);
 
 G_END_DECLS
 

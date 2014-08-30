@@ -25,14 +25,12 @@
 #include "gstrtmp2src.h"
 #include "gstrtmp2sink.h"
 
-GST_DEBUG_CATEGORY_STATIC (gst_rtmp2_src_debug_category);
-#define GST_CAT_DEFAULT gst_rtmp2_src_debug_category
-
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  gst_element_register (plugin, "rtmp2src", GST_RANK_NONE, GST_TYPE_RTMP2_SRC);
-  gst_element_register (plugin, "rtmp2sink", GST_RANK_NONE,
+  gst_element_register (plugin, "rtmp2src", GST_RANK_PRIMARY + 1,
+      GST_TYPE_RTMP2_SRC);
+  gst_element_register (plugin, "rtmp2sink", GST_RANK_PRIMARY + 1,
       GST_TYPE_RTMP2_SINK);
 
   return TRUE;

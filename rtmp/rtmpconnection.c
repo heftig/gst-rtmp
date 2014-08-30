@@ -40,6 +40,7 @@ static void gst_rtmp_connection_get_property (GObject * object,
     guint property_id, GValue * value, GParamSpec * pspec);
 static void gst_rtmp_connection_dispose (GObject * object);
 static void gst_rtmp_connection_finalize (GObject * object);
+static void gst_rtmp_connection_got_closed (GstRtmpConnection * connection);
 static gboolean gst_rtmp_connection_input_ready (GInputStream * is,
     gpointer user_data);
 static gboolean gst_rtmp_connection_output_ready (GOutputStream * os,
@@ -70,9 +71,19 @@ static void gst_rtmp_connection_start_output (GstRtmpConnection * sc);
 static void
 gst_rtmp_connection_handle_pcm (GstRtmpConnection * connection,
     GstRtmpChunk * chunk);
-
+static void gst_rtmp_connection_handle_chunk (GstRtmpConnection * sc,
+    GstRtmpChunk * chunk);
 
 static void gst_rtmp_connection_server_handshake1 (GstRtmpConnection * sc);
+
+typedef struct _CommandCallback CommandCallback;
+struct _CommandCallback
+{
+  int stream_id;
+  int transaction_id;
+  GstRtmpCommandCallback func;
+  gpointer user_data;
+};
 
 enum
 {
@@ -100,6 +111,13 @@ gst_rtmp_connection_class_init (GstRtmpConnectionClass * klass)
       G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpConnectionClass,
           got_chunk), NULL, NULL, g_cclosure_marshal_generic,
       G_TYPE_NONE, 1, GST_TYPE_RTMP_CHUNK);
+  g_signal_new ("got-control-chunk", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpConnectionClass,
+          got_control_chunk), NULL, NULL, g_cclosure_marshal_generic,
+      G_TYPE_NONE, 1, GST_TYPE_RTMP_CHUNK);
+  g_signal_new ("closed", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRtmpConnectionClass, closed),
+      NULL, NULL, g_cclosure_marshal_generic, G_TYPE_NONE, 0);
 }
 
 static void
@@ -228,8 +246,7 @@ gst_rtmp_connection_input_ready (GInputStream * is, gpointer user_data)
     return G_SOURCE_REMOVE;
   }
   if (ret == 0) {
-    /* FIXME probably closed */
-    GST_ERROR ("closed?");
+    gst_rtmp_connection_got_closed (sc);
     return G_SOURCE_REMOVE;
   }
 
@@ -294,6 +311,13 @@ gst_rtmp_connection_output_ready (GOutputStream * os, gpointer user_data)
 }
 
 static void
+gst_rtmp_connection_got_closed (GstRtmpConnection * connection)
+{
+  connection->closed = TRUE;
+  g_signal_emit_by_name (connection, "closed");
+}
+
+static void
 gst_rtmp_connection_write_chunk_done (GObject * obj,
     GAsyncResult * res, gpointer user_data)
 {
@@ -309,8 +333,8 @@ gst_rtmp_connection_write_chunk_done (GObject * obj,
 
   ret = g_output_stream_write_bytes_finish (os, res, &error);
   if (ret < 0) {
-    GST_ERROR ("write error: %s", error->message);
-    g_assert_not_reached ();
+    GST_DEBUG ("write error: %s", error->message);
+    gst_rtmp_connection_got_closed (connection);
     g_error_free (error);
     return;
   }
@@ -526,19 +550,7 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
           header.message_length);
       entry->payload = NULL;
 
-      if (entry->chunk->stream_id == 0x02) {
-        GST_DEBUG ("got protocol control message, type: %d",
-            entry->chunk->message_type_id);
-        gst_rtmp_connection_handle_pcm (sc, entry->chunk);
-        g_signal_emit_by_name (sc, "got-control-chunk", entry->chunk);
-      } else if (entry->chunk->message_type_id == 0x14) {
-        /* FIXME parse command */
-        g_signal_emit_by_name (sc, "got-command", entry->chunk);
-      } else {
-        GST_DEBUG ("got chunk: %" G_GSIZE_FORMAT " bytes",
-            entry->chunk->message_length);
-        g_signal_emit_by_name (sc, "got-chunk", entry->chunk);
-      }
+      gst_rtmp_connection_handle_chunk (sc, entry->chunk);
       g_object_unref (entry->chunk);
 
       entry->chunk = NULL;
@@ -549,6 +561,48 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
       G_GSIZE_FORMAT, needed_bytes, size);
   gst_rtmp_connection_set_input_callback (sc,
       gst_rtmp_connection_chunk_callback, needed_bytes);
+}
+
+static void
+gst_rtmp_connection_handle_chunk (GstRtmpConnection * sc, GstRtmpChunk * chunk)
+{
+  if (chunk->stream_id == 0x02) {
+    GST_DEBUG ("got protocol control message, type: %d",
+        chunk->message_type_id);
+    gst_rtmp_connection_handle_pcm (sc, chunk);
+    g_signal_emit_by_name (sc, "got-control-chunk", chunk);
+  } else {
+    if (chunk->message_type_id == 0x14) {
+      CommandCallback *cb = NULL;
+      GList *g;
+      char *command_name;
+      double transaction_id;
+      GstAmfNode *command_object;
+      GstAmfNode *optional_args;
+
+      gst_rtmp_chunk_parse_message (chunk, &command_name, &transaction_id,
+          &command_object, &optional_args);
+      for (g = sc->command_callbacks; g; g = g_list_next (g)) {
+        cb = g->data;
+        if (cb->stream_id == chunk->stream_id &&
+            cb->transaction_id == transaction_id) {
+          break;
+        }
+      }
+      if (cb) {
+        sc->command_callbacks = g_list_remove (sc->command_callbacks, cb);
+        cb->func (sc, chunk, command_name, transaction_id, command_object,
+            optional_args, cb->user_data);
+        g_free (command_name);
+        gst_amf_node_free (command_object);
+        if (optional_args)
+          gst_amf_node_free (optional_args);
+        g_free (cb);
+      }
+    }
+    GST_DEBUG ("got chunk: %" G_GSIZE_FORMAT " bytes", chunk->message_length);
+    g_signal_emit_by_name (sc, "got-chunk", chunk);
+  }
 }
 
 static void
@@ -770,7 +824,8 @@ gst_rtmp_connection_dump (GstRtmpConnection * connection)
 int
 gst_rtmp_connection_send_command (GstRtmpConnection * connection, int stream_id,
     const char *command_name, int transaction_id, GstAmfNode * command_object,
-    GstAmfNode * optional_args)
+    GstAmfNode * optional_args, GstRtmpCommandCallback response_command,
+    gpointer user_data)
 {
   GstRtmpChunk *chunk;
 
@@ -782,8 +837,59 @@ gst_rtmp_connection_send_command (GstRtmpConnection * connection, int stream_id,
 
   chunk->payload = gst_amf_serialize_command (command_name, transaction_id,
       command_object, optional_args);
+  chunk->message_length = g_bytes_get_size (chunk->payload);
 
   gst_rtmp_connection_queue_chunk (connection, chunk);
+
+  if (response_command) {
+    CommandCallback *callback;
+
+    callback = g_malloc0 (sizeof (CommandCallback));
+    callback->stream_id = stream_id;
+    callback->transaction_id = transaction_id;
+    callback->func = response_command;
+    callback->user_data = user_data;
+
+    connection->command_callbacks =
+        g_list_append (connection->command_callbacks, callback);
+  }
+
+  return transaction_id;
+}
+
+int
+gst_rtmp_connection_send_command2 (GstRtmpConnection * connection,
+    int chunk_stream_id, int stream_id,
+    const char *command_name, int transaction_id, GstAmfNode * command_object,
+    GstAmfNode * optional_args, GstAmfNode * n3, GstAmfNode * n4,
+    GstRtmpCommandCallback response_command, gpointer user_data)
+{
+  GstRtmpChunk *chunk;
+
+  chunk = gst_rtmp_chunk_new ();
+  chunk->stream_id = chunk_stream_id;
+  chunk->timestamp = 0;         /* FIXME */
+  chunk->message_type_id = 0x14;
+  chunk->info = stream_id;
+
+  chunk->payload = gst_amf_serialize_command2 (command_name, transaction_id,
+      command_object, optional_args, n3, n4);
+  chunk->message_length = g_bytes_get_size (chunk->payload);
+
+  gst_rtmp_connection_queue_chunk (connection, chunk);
+
+  if (response_command) {
+    CommandCallback *callback;
+
+    callback = g_malloc0 (sizeof (CommandCallback));
+    callback->stream_id = stream_id;
+    callback->transaction_id = transaction_id;
+    callback->func = response_command;
+    callback->user_data = user_data;
+
+    connection->command_callbacks =
+        g_list_append (connection->command_callbacks, callback);
+  }
 
   return transaction_id;
 }

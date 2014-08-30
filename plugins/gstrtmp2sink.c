@@ -19,7 +19,8 @@
 /**
  * SECTION:element-gstrtmp2sink
  *
- * The rtmp2sink element does FIXME stuff.
+ * The rtmp2sink element sends audio and video streams to an RTMP
+ * server.
  *
  * <refsect2>
  * <title>Example launch line</title>
@@ -90,7 +91,7 @@ static GstStaticPadTemplate gst_rtmp2_sink_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("application/unknown")
+    GST_STATIC_CAPS ("video/x-flv")
     );
 
 

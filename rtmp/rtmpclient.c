@@ -206,6 +206,7 @@ gst_rtmp_client_connect_async (GstRtmpClient * client,
 
   addr = g_network_address_new (client->server_address, client->server_port);
   client->socket_client = g_socket_client_new ();
+  g_socket_client_set_timeout (client->socket_client, 5);
 
   GST_DEBUG ("g_socket_client_connect_async");
   g_socket_client_connect_async (client->socket_client, addr,

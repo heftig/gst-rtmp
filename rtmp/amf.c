@@ -552,11 +552,13 @@ gst_amf_serialize_command (const char *command_name, int transaction_id,
   serializer->size = 4096;
   serializer->data = g_malloc (serializer->size);
 
+  _serialize_u8 (serializer, GST_AMF_TYPE_STRING);
   _serialize_utf8_string (serializer, command_name);
+  _serialize_u8 (serializer, GST_AMF_TYPE_NUMBER);
   _serialize_number (serializer, transaction_id);
-  _serialize_object (serializer, command_object);
+  _serialize_value (serializer, command_object);
   if (optional_args)
-    _serialize_object (serializer, optional_args);
+    _serialize_value (serializer, optional_args);
 
   if (serializer->error) {
     GST_ERROR ("failed to serialize");
@@ -564,4 +566,79 @@ gst_amf_serialize_command (const char *command_name, int transaction_id,
     return NULL;
   }
   return g_bytes_new_take (serializer->data, serializer->offset);
+}
+
+GBytes *
+gst_amf_serialize_command2 (const char *command_name, int transaction_id,
+    GstAmfNode * command_object, GstAmfNode * optional_args, GstAmfNode * n3,
+    GstAmfNode * n4)
+{
+  AmfSerializer _s = { 0 }, *serializer = &_s;
+
+  serializer->size = 4096;
+  serializer->data = g_malloc (serializer->size);
+
+  _serialize_u8 (serializer, GST_AMF_TYPE_STRING);
+  _serialize_utf8_string (serializer, command_name);
+  _serialize_u8 (serializer, GST_AMF_TYPE_NUMBER);
+  _serialize_number (serializer, transaction_id);
+  _serialize_value (serializer, command_object);
+  if (optional_args)
+    _serialize_value (serializer, optional_args);
+  if (n3)
+    _serialize_value (serializer, n3);
+  if (n4)
+    _serialize_value (serializer, n4);
+
+  if (serializer->error) {
+    GST_ERROR ("failed to serialize");
+    g_free (serializer->data);
+    return NULL;
+  }
+  return g_bytes_new_take (serializer->data, serializer->offset);
+}
+
+gboolean
+gst_amf_node_get_boolean (const GstAmfNode * node)
+{
+  return node->int_val;
+}
+
+const char *
+gst_amf_node_get_string (const GstAmfNode * node)
+{
+  return node->string_val;
+}
+
+double
+gst_amf_node_get_number (const GstAmfNode * node)
+{
+  return node->double_val;
+}
+
+const GstAmfNode *
+gst_amf_node_get_object (const GstAmfNode * node, const char *field_name)
+{
+  int i;
+  for (i = 0; i < node->array_val->len; i++) {
+    AmfObjectField *field = g_ptr_array_index (node->array_val, i);
+    if (strcmp (field->name, field_name) == 0) {
+      return field->value;
+    }
+  }
+  return NULL;
+}
+
+int
+gst_amf_node_get_object_length (const GstAmfNode * node)
+{
+  return node->array_val->len;
+}
+
+const GstAmfNode *
+gst_amf_node_get_object_by_index (const GstAmfNode * node, int i)
+{
+  AmfObjectField *field;
+  field = g_ptr_array_index (node->array_val, i);
+  return field->value;
 }
