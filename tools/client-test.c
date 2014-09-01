@@ -45,20 +45,22 @@ static GOptionEntry entries[] = {
 
 static void connect_done (GObject * source, GAsyncResult * result,
     gpointer user_data);
-static void cmd_connect_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
-    const char *command_name, int transaction_id, GstAmfNode *command_object,
-    GstAmfNode *optional_args, gpointer user_data);
+static void cmd_connect_done (GstRtmpConnection * connection,
+    GstRtmpChunk * chunk, const char *command_name, int transaction_id,
+    GstAmfNode * command_object, GstAmfNode * optional_args,
+    gpointer user_data);
 static void send_connect (void);
 static void got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
 static void send_create_stream (void);
-static void create_stream_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
-    const char *command_name, int transaction_id, GstAmfNode *command_object,
-    GstAmfNode *optional_args, gpointer user_data);
+static void create_stream_done (GstRtmpConnection * connection,
+    GstRtmpChunk * chunk, const char *command_name, int transaction_id,
+    GstAmfNode * command_object, GstAmfNode * optional_args,
+    gpointer user_data);
 static void send_play (void);
-static void play_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
-    const char *command_name, int transaction_id, GstAmfNode *command_object,
-    GstAmfNode *optional_args, gpointer user_data);
+static void play_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    const char *command_name, int transaction_id, GstAmfNode * command_object,
+    GstAmfNode * optional_args, gpointer user_data);
 
 int
 main (int argc, char *argv[])
@@ -172,13 +174,14 @@ send_connect (void)
   // "audioCodecs": 3191,
   // "videoCodecs": 252,
   // "videoFunction": 1,
-  gst_rtmp_connection_send_command (connection, 3, "connect", 1, node, NULL, cmd_connect_done, NULL);
+  gst_rtmp_connection_send_command (connection, 3, "connect", 1, node, NULL,
+      cmd_connect_done, NULL);
 }
 
 static void
-cmd_connect_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
-    const char *command_name, int transaction_id, GstAmfNode *command_object,
-    GstAmfNode *optional_args, gpointer user_data)
+cmd_connect_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    const char *command_name, int transaction_id, GstAmfNode * command_object,
+    GstAmfNode * optional_args, gpointer user_data)
 {
   gboolean ret;
 
@@ -196,7 +199,7 @@ cmd_connect_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
   }
 
   if (ret) {
-    GST_ERROR("success");
+    GST_ERROR ("success");
 
     send_create_stream ();
   }
@@ -208,26 +211,27 @@ send_create_stream (void)
   GstAmfNode *node;
 
   node = gst_amf_node_new (GST_AMF_TYPE_NULL);
-  gst_rtmp_connection_send_command (connection, 3, "createStream", 2, node, NULL, create_stream_done, NULL);
+  gst_rtmp_connection_send_command (connection, 3, "createStream", 2, node,
+      NULL, create_stream_done, NULL);
 
 }
 
 static void
-create_stream_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
-    const char *command_name, int transaction_id, GstAmfNode *command_object,
-    GstAmfNode *optional_args, gpointer user_data)
+create_stream_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    const char *command_name, int transaction_id, GstAmfNode * command_object,
+    GstAmfNode * optional_args, gpointer user_data)
 {
   gboolean ret;
   int stream_id;
 
   ret = FALSE;
   if (optional_args) {
-   stream_id = gst_amf_node_get_number (optional_args);
-   ret = TRUE;
+    stream_id = gst_amf_node_get_number (optional_args);
+    ret = TRUE;
   }
 
   if (ret) {
-    GST_ERROR("createStream success, stream_id=%d", stream_id);
+    GST_ERROR ("createStream success, stream_id=%d", stream_id);
 
     send_play ();
   }
@@ -245,29 +249,27 @@ send_play (void)
   gst_amf_node_set_string (n2, "myStream");
   n3 = gst_amf_node_new (GST_AMF_TYPE_NUMBER);
   gst_amf_node_set_number (n3, 0);
-  gst_rtmp_connection_send_command2 (connection, 8, 1, "play", 3, n1, n2, n3, NULL, play_done, NULL);
+  gst_rtmp_connection_send_command2 (connection, 8, 1, "play", 3, n1, n2, n3,
+      NULL, play_done, NULL);
 
 }
 
 static void
-play_done (GstRtmpConnection *connection, GstRtmpChunk *chunk,
-    const char *command_name, int transaction_id, GstAmfNode *command_object,
-    GstAmfNode *optional_args, gpointer user_data)
+play_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    const char *command_name, int transaction_id, GstAmfNode * command_object,
+    GstAmfNode * optional_args, gpointer user_data)
 {
   gboolean ret;
   int stream_id;
 
   ret = FALSE;
   if (optional_args) {
-   stream_id = gst_amf_node_get_number (optional_args);
-   ret = TRUE;
+    stream_id = gst_amf_node_get_number (optional_args);
+    ret = TRUE;
   }
 
   if (ret) {
-    GST_ERROR("play success, stream_id=%d", stream_id);
+    GST_ERROR ("play success, stream_id=%d", stream_id);
 
   }
 }
-
-
-

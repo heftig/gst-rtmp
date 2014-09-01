@@ -85,7 +85,7 @@ main (int argc, char *argv[])
 
   client = gst_rtmp_client_new ();
   gst_rtmp_client_set_server_address (client,
-      "ec2-54-185-55-241.us-west-2.compute.amazonaws.com");
+      "ec2-54-185-123-199.us-west-2.compute.amazonaws.com");
   cancellable = g_cancellable_new ();
 
   if (verbose)

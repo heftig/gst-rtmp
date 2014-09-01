@@ -967,7 +967,7 @@ gst_rtmp_connection_send_ack (GstRtmpConnection * connection)
   chunk = gst_rtmp_chunk_new ();
   chunk->stream_id = 2;
   chunk->timestamp = 0;
-  chunk->message_type_id = 3;
+  chunk->message_type_id = 5;
   chunk->info = 0;
 
   data = g_malloc (4);

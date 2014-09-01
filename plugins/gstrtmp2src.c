@@ -129,11 +129,10 @@ GST_STATIC_PAD_TEMPLATE ("src",
 
 G_DEFINE_TYPE_WITH_CODE (GstRtmp2Src, gst_rtmp2_src, GST_TYPE_PUSH_SRC,
     do {
-      G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER,
+    G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER,
           gst_rtmp2_src_uri_handler_init);
       GST_DEBUG_CATEGORY_INIT (gst_rtmp2_src_debug_category, "rtmp2src", 0,
-          "debug category for rtmp2src element");
-    } while (0));
+          "debug category for rtmp2src element");} while (0));
 
 static void
 gst_rtmp2_src_class_init (GstRtmp2SrcClass * klass)
@@ -403,7 +402,8 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
 
   ret = gst_rtmp_client_connect_finish (rtmp2src->client, result, &error);
   if (!ret) {
-    GST_ERROR ("error: %s", error->message);
+    GST_ELEMENT_ERROR (rtmp2src, RESOURCE, OPEN_READ,
+        ("Could not connect to server"), ("%s", error->message));
     g_error_free (error);
     return;
   }
