@@ -99,6 +99,8 @@ gst_rtmp_client_init (GstRtmpClient * rtmpclient)
 {
   rtmpclient->server_address = g_strdup (DEFAULT_SERVER_ADDRESS);
   rtmpclient->server_port = DEFAULT_SERVER_PORT;
+
+  rtmpclient->connection = gst_rtmp_connection_new ();
 }
 
 void
@@ -256,7 +258,8 @@ gst_rtmp_client_connect_done (GObject * source, GAsyncResult * result,
     return;
   }
 
-  client->connection = gst_rtmp_connection_new (client->socket_connection);
+  gst_rtmp_connection_set_socket_connection (client->connection,
+      client->socket_connection);
   gst_rtmp_connection_start_handshake (client->connection, FALSE);
 
   g_simple_async_result_complete (client->async);

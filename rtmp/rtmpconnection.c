@@ -198,13 +198,22 @@ gst_rtmp_connection_finalize (GObject * object)
 }
 
 GstRtmpConnection *
-gst_rtmp_connection_new (GSocketConnection * connection)
+gst_rtmp_connection_new (void)
 {
   GstRtmpConnection *sc;
-  GInputStream *is;
 
   sc = g_object_new (GST_TYPE_RTMP_CONNECTION, NULL);
-  sc->connection = connection;
+
+  return sc;
+}
+
+void
+gst_rtmp_connection_set_socket_connection (GstRtmpConnection * sc,
+    GSocketConnection * connection)
+{
+  GInputStream *is;
+
+  sc->connection = g_object_ref (connection);
 
   is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
   sc->input_source =
@@ -213,8 +222,6 @@ gst_rtmp_connection_new (GSocketConnection * connection)
   g_source_set_callback (sc->input_source,
       (GSourceFunc) gst_rtmp_connection_input_ready, sc, NULL);
   g_source_attach (sc->input_source, NULL);
-
-  return sc;
 }
 
 static void

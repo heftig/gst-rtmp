@@ -21,6 +21,8 @@
 #define _GST_RTMP2_SINK_H_
 
 #include <gst/base/gstbasesink.h>
+#include <rtmp/rtmpclient.h>
+#include <rtmp/rtmputils.h>
 
 G_BEGIN_DECLS
 
@@ -36,6 +38,27 @@ typedef struct _GstRtmp2SinkClass GstRtmp2SinkClass;
 struct _GstRtmp2Sink
 {
   GstBaseSink base_rtmp2sink;
+
+  /* properties */
+  char *uri;
+  int timeout;
+  char *server_address;
+  int port;
+  char *application;
+  char *stream;
+  char *secure_token;
+
+  /* stuff */
+  GMutex lock;
+  GCond cond;
+  gboolean reset;
+  GstTask *task;
+  GRecMutex task_lock;
+  GMainLoop *task_main_loop;
+
+  GstRtmpClient *client;
+  GstRtmpConnection *connection;
+  gboolean dump;
 
 };
 

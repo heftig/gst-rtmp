@@ -46,7 +46,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_rtmp2_src_debug_category);
 
 /* prototypes */
 
-
+/* GObject virtual functions */
 static void gst_rtmp2_src_set_property (GObject * object,
     guint property_id, const GValue * value, GParamSpec * pspec);
 static void gst_rtmp2_src_get_property (GObject * object,
@@ -56,7 +56,7 @@ static void gst_rtmp2_src_finalize (GObject * object);
 static void gst_rtmp2_src_uri_handler_init (gpointer g_iface,
     gpointer iface_data);
 
-static void gst_rtmp2_src_task (gpointer user_data);
+/* GstBaseSrc virtual functions */
 static gboolean gst_rtmp2_src_start (GstBaseSrc * src);
 static gboolean gst_rtmp2_src_stop (GstBaseSrc * src);
 static void gst_rtmp2_src_get_times (GstBaseSrc * src, GstBuffer * buffer,
@@ -75,6 +75,15 @@ static GstFlowReturn gst_rtmp2_src_create (GstBaseSrc * src, guint64 offset,
 static GstFlowReturn gst_rtmp2_src_alloc (GstBaseSrc * src, guint64 offset,
     guint size, GstBuffer ** buf);
 
+/* URI handler */
+static GstURIType gst_rtmp2_src_uri_get_type (GType type);
+static const gchar *const *gst_rtmp2_src_uri_get_protocols (GType type);
+static gchar *gst_rtmp2_src_uri_get_uri (GstURIHandler * handler);
+static gboolean gst_rtmp2_src_uri_set_uri (GstURIHandler * handler,
+    const gchar * uri, GError ** error);
+
+/* Internal API */
+static void gst_rtmp2_src_task (gpointer user_data);
 static void got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
 static void connect_done (GObject * source, GAsyncResult * result,
@@ -133,16 +142,18 @@ GST_STATIC_PAD_TEMPLATE ("src",
 
 /* class initialization */
 
-G_DEFINE_TYPE_WITH_CODE (GstRtmp2Src, gst_rtmp2_src, GST_TYPE_PUSH_SRC,
-    do {
-      G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER,
-          gst_rtmp2_src_uri_handler_init);
-      GST_DEBUG_CATEGORY_INIT (gst_rtmp2_src_debug_category, "rtmp2src", 0,
-          "debug category for rtmp2src element");
-    } while (0));
-
 static void
-gst_rtmp2_src_class_init (GstRtmp2SrcClass * klass)
+do_init (GType g_define_type_id)
+{
+  G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER, gst_rtmp2_src_uri_handler_init);
+  GST_DEBUG_CATEGORY_INIT (gst_rtmp2_src_debug_category, "rtmp2src", 0,
+      "debug category for rtmp2src element");
+}
+
+G_DEFINE_TYPE_WITH_CODE (GstRtmp2Src, gst_rtmp2_src, GST_TYPE_PUSH_SRC,
+    do_init (g_define_type_id))
+
+     static void gst_rtmp2_src_class_init (GstRtmp2SrcClass * klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstBaseSrcClass *base_src_class = GST_BASE_SRC_CLASS (klass);
@@ -207,6 +218,7 @@ static void
 gst_rtmp2_src_init (GstRtmp2Src * rtmp2src)
 {
   g_mutex_init (&rtmp2src->lock);
+  g_cond_init (&rtmp2src->cond);
   rtmp2src->queue = g_queue_new ();
 
   //gst_base_src_set_live (GST_BASE_SRC(rtmp2src), TRUE);
@@ -221,45 +233,6 @@ gst_rtmp2_src_init (GstRtmp2Src * rtmp2src)
   rtmp2src->client = gst_rtmp_client_new ();
   g_object_set (rtmp2src->client, "timeout", rtmp2src->timeout, NULL);
 
-}
-
-static GstURIType
-gst_rtmp2_src_uri_get_type (GType type)
-{
-  return GST_URI_SRC;
-}
-
-static const gchar *const *
-gst_rtmp2_src_uri_get_protocols (GType type)
-{
-  static const gchar *protocols[] = { "rtmp", NULL };
-
-  return protocols;
-}
-
-static gchar *
-gst_rtmp2_src_uri_get_uri (GstURIHandler * handler)
-{
-  GstRtmp2Src *src = GST_RTMP2_SRC (handler);
-
-  return gst_rtmp2_src_get_uri (src);
-}
-
-static gboolean
-gst_rtmp2_src_uri_set_uri (GstURIHandler * handler, const gchar * uri,
-    GError ** error)
-{
-  GstRtmp2Src *src = GST_RTMP2_SRC (handler);
-  gboolean ret;
-
-  ret = gst_rtmp2_src_set_uri (src, uri);
-  if (!ret && error) {
-    *error =
-        g_error_new (GST_RESOURCE_ERROR, GST_RESOURCE_ERROR_FAILED,
-        "Invalid URI");
-  }
-
-  return ret;
 }
 
 static void
@@ -367,6 +340,7 @@ gst_rtmp2_src_finalize (GObject * object)
   g_rec_mutex_clear (&rtmp2src->task_lock);
   g_object_unref (rtmp2src->client);
   g_mutex_clear (&rtmp2src->lock);
+  g_cond_clear (&rtmp2src->cond);
   g_queue_free_full (rtmp2src->queue, g_object_unref);
 
   G_OBJECT_CLASS (gst_rtmp2_src_parent_class)->finalize (object);
@@ -820,6 +794,49 @@ gst_rtmp2_src_alloc (GstBaseSrc * src, guint64 offset, guint size,
 
   return GST_FLOW_OK;
 }
+
+
+/* URL handler */
+
+static GstURIType
+gst_rtmp2_src_uri_get_type (GType type)
+{
+  return GST_URI_SRC;
+}
+
+static const gchar *const *
+gst_rtmp2_src_uri_get_protocols (GType type)
+{
+  static const gchar *protocols[] = { "rtmp", NULL };
+
+  return protocols;
+}
+
+static gchar *
+gst_rtmp2_src_uri_get_uri (GstURIHandler * handler)
+{
+  GstRtmp2Src *src = GST_RTMP2_SRC (handler);
+
+  return gst_rtmp2_src_get_uri (src);
+}
+
+static gboolean
+gst_rtmp2_src_uri_set_uri (GstURIHandler * handler, const gchar * uri,
+    GError ** error)
+{
+  GstRtmp2Src *src = GST_RTMP2_SRC (handler);
+  gboolean ret;
+
+  ret = gst_rtmp2_src_set_uri (src, uri);
+  if (!ret && error) {
+    *error =
+        g_error_new (GST_RESOURCE_ERROR, GST_RESOURCE_ERROR_FAILED,
+        "Invalid URI");
+  }
+
+  return ret;
+}
+
 
 /* internal API */
 
