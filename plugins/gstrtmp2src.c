@@ -94,10 +94,26 @@ static void play_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     const char *command_name, int transaction_id, GstAmfNode * command_object,
     GstAmfNode * optional_args, gpointer user_data);
 
+static gchar *gst_rtmp2_src_get_uri (GstRtmp2Src * src);
+static gboolean gst_rtmp2_src_set_uri (GstRtmp2Src * src, const char *uri);
+
 enum
 {
-  PROP_0
+  PROP_0,
+  PROP_LOCATION,
+  PROP_TIMEOUT,
+  PROP_SERVER_ADDRESS,
+  PROP_PORT,
+  PROP_APPLICATION,
+  PROP_STREAM
 };
+
+#define DEFAULT_LOCATION "rtmp://localhost/live/myStream"
+#define DEFAULT_TIMEOUT 5
+#define DEFAULT_SERVER_ADDRESS ""
+#define DEFAULT_PORT 1935
+#define DEFAULT_APPLICATION "live"
+#define DEFAULT_STREAM "myStream"
 
 /* pad templates */
 
@@ -113,10 +129,11 @@ GST_STATIC_PAD_TEMPLATE ("src",
 
 G_DEFINE_TYPE_WITH_CODE (GstRtmp2Src, gst_rtmp2_src, GST_TYPE_PUSH_SRC,
     do {
-    G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER,
+      G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER,
           gst_rtmp2_src_uri_handler_init);
       GST_DEBUG_CATEGORY_INIT (gst_rtmp2_src_debug_category, "rtmp2src", 0,
-          "debug category for rtmp2src element");} while (0));
+          "debug category for rtmp2src element");
+    } while (0));
 
 static void
 gst_rtmp2_src_class_init (GstRtmp2SrcClass * klass)
@@ -153,6 +170,27 @@ gst_rtmp2_src_class_init (GstRtmp2SrcClass * klass)
   base_src_class->create = GST_DEBUG_FUNCPTR (gst_rtmp2_src_create);
   base_src_class->alloc = GST_DEBUG_FUNCPTR (gst_rtmp2_src_alloc);
 
+  g_object_class_install_property (gobject_class, PROP_LOCATION,
+      g_param_spec_string ("location", "RTMP Location",
+          "Location of the RTMP url to read",
+          DEFAULT_LOCATION, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_SERVER_ADDRESS,
+      g_param_spec_string ("server-address", "RTMP Server Address",
+          "Address of RTMP server",
+          DEFAULT_SERVER_ADDRESS, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_PORT,
+      g_param_spec_int ("port", "RTMP server port",
+          "RTMP server port (usually 1935)",
+          1, 65535, DEFAULT_PORT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_APPLICATION,
+      g_param_spec_string ("application", "RTMP application",
+          "RTMP application",
+          DEFAULT_APPLICATION, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_STREAM,
+      g_param_spec_string ("stream", "RTMP stream",
+          "RTMP stream",
+          DEFAULT_STREAM, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
 }
 
 static void
@@ -163,12 +201,14 @@ gst_rtmp2_src_init (GstRtmp2Src * rtmp2src)
 
   //gst_base_src_set_live (GST_BASE_SRC(rtmp2src), TRUE);
 
+  rtmp2src->timeout = DEFAULT_TIMEOUT;
+  gst_rtmp2_src_set_uri (rtmp2src, DEFAULT_LOCATION);
+
   rtmp2src->task = gst_task_new (gst_rtmp2_src_task, rtmp2src, NULL);
   g_rec_mutex_init (&rtmp2src->task_lock);
   gst_task_set_lock (rtmp2src->task, &rtmp2src->task_lock);
   rtmp2src->client = gst_rtmp_client_new ();
-  gst_rtmp_client_set_server_address (rtmp2src->client,
-      "ec2-54-185-55-241.us-west-2.compute.amazonaws.com");
+  g_object_set (rtmp2src->client, "timeout", rtmp2src->timeout, NULL);
 
 }
 
@@ -191,15 +231,24 @@ gst_rtmp2_src_uri_get_uri (GstURIHandler * handler)
 {
   GstRtmp2Src *src = GST_RTMP2_SRC (handler);
 
-  /* FIXME: make thread-safe */
-  return g_strdup (src->uri);
+  return gst_rtmp2_src_get_uri (src);
 }
 
 static gboolean
 gst_rtmp2_src_uri_set_uri (GstURIHandler * handler, const gchar * uri,
     GError ** error)
 {
-  return TRUE;
+  GstRtmp2Src *src = GST_RTMP2_SRC (handler);
+  gboolean ret;
+
+  ret = gst_rtmp2_src_set_uri (src, uri);
+  if (!ret && error) {
+    *error =
+        g_error_new (GST_RESOURCE_ERROR, GST_RESOURCE_ERROR_FAILED,
+        "Invalid URI");
+  }
+
+  return ret;
 }
 
 static void
@@ -222,6 +271,24 @@ gst_rtmp2_src_set_property (GObject * object, guint property_id,
   GST_DEBUG_OBJECT (rtmp2src, "set_property");
 
   switch (property_id) {
+    case PROP_LOCATION:
+      gst_rtmp2_src_set_uri (rtmp2src, g_value_get_string (value));
+      break;
+    case PROP_SERVER_ADDRESS:
+      g_free (rtmp2src->server_address);
+      rtmp2src->server_address = g_value_dup_string (value);
+      break;
+    case PROP_PORT:
+      rtmp2src->port = g_value_get_int (value);
+      break;
+    case PROP_APPLICATION:
+      g_free (rtmp2src->application);
+      rtmp2src->application = g_value_dup_string (value);
+      break;
+    case PROP_STREAM:
+      g_free (rtmp2src->stream);
+      rtmp2src->stream = g_value_dup_string (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -237,6 +304,21 @@ gst_rtmp2_src_get_property (GObject * object, guint property_id,
   GST_DEBUG_OBJECT (rtmp2src, "get_property");
 
   switch (property_id) {
+    case PROP_LOCATION:
+      g_value_set_string (value, gst_rtmp2_src_get_uri (rtmp2src));
+      break;
+    case PROP_SERVER_ADDRESS:
+      g_value_set_string (value, rtmp2src->server_address);
+      break;
+    case PROP_PORT:
+      g_value_set_int (value, rtmp2src->port);
+      break;
+    case PROP_APPLICATION:
+      g_value_set_string (value, rtmp2src->application);
+      break;
+    case PROP_STREAM:
+      g_value_set_string (value, rtmp2src->stream);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -280,6 +362,8 @@ gst_rtmp2_src_start (GstBaseSrc * src)
 
   GST_DEBUG_OBJECT (rtmp2src, "start");
 
+  rtmp2src->sent_header = FALSE;
+
   gst_task_start (rtmp2src->task);
 
   return TRUE;
@@ -292,14 +376,22 @@ gst_rtmp2_src_task (gpointer user_data)
   GMainLoop *main_loop;
   GMainContext *main_context;
 
+  GST_DEBUG ("gst_rtmp2_src_task starting");
+
+  gst_rtmp_client_set_server_address (rtmp2src->client,
+      rtmp2src->server_address);
   gst_rtmp_client_connect_async (rtmp2src->client, NULL, connect_done,
       rtmp2src);
 
   main_context = g_main_context_new ();
   main_loop = g_main_loop_new (main_context, TRUE);
+  rtmp2src->task_main_loop = main_loop;
   g_main_loop_run (main_loop);
+  rtmp2src->task_main_loop = NULL;
   g_main_loop_unref (main_loop);
   g_main_context_unref (main_context);
+
+  GST_DEBUG ("gst_rtmp2_src_task exiting");
 }
 
 static void
@@ -364,8 +456,19 @@ got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data)
 {
   GstRtmp2Src *rtmp2src = GST_RTMP2_SRC (user_data);
+
   if (rtmp2src->dump) {
     dump_chunk (chunk, FALSE);
+  }
+
+  if ((chunk->stream_id == 7 && chunk->message_type_id == 9) ||
+      (chunk->stream_id == 5 && chunk->message_type_id == 18
+          && chunk->message_length > 100)) {
+    g_object_ref (chunk);
+    g_mutex_lock (&rtmp2src->lock);
+    g_queue_push_tail (rtmp2src->queue, chunk);
+    g_cond_signal (&rtmp2src->cond);
+    g_mutex_unlock (&rtmp2src->lock);
   }
 }
 
@@ -373,11 +476,14 @@ static void
 send_connect (GstRtmp2Src * rtmp2src)
 {
   GstAmfNode *node;
+  gchar *uri;
 
   node = gst_amf_node_new (GST_AMF_TYPE_OBJECT);
-  gst_amf_object_set_string (node, "app", "live");
+  gst_amf_object_set_string (node, "app", rtmp2src->application);
   gst_amf_object_set_string (node, "type", "nonprivate");
-  gst_amf_object_set_string (node, "tcUrl", "rtmp://localhost:1935/live");
+  uri = gst_rtmp2_src_get_uri (rtmp2src);
+  gst_amf_object_set_string (node, "tcUrl", uri);
+  g_free (uri);
   // "fpad": False,
   // "capabilities": 15,
   // "audioCodecs": 3191,
@@ -409,9 +515,11 @@ cmd_connect_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   }
 
   if (ret) {
-    GST_ERROR ("success");
+    GST_DEBUG ("success");
 
     send_create_stream (rtmp2src);
+  } else {
+    GST_ERROR ("connect error");
   }
 }
 
@@ -442,9 +550,10 @@ create_stream_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   }
 
   if (ret) {
-    GST_ERROR ("createStream success, stream_id=%d", stream_id);
-
+    GST_DEBUG ("createStream success, stream_id=%d", stream_id);
     send_play (rtmp2src);
+  } else {
+    GST_ERROR ("createStream failed");
   }
 }
 
@@ -457,7 +566,7 @@ send_play (GstRtmp2Src * rtmp2src)
 
   n1 = gst_amf_node_new (GST_AMF_TYPE_NULL);
   n2 = gst_amf_node_new (GST_AMF_TYPE_STRING);
-  gst_amf_node_set_string (n2, "myStream");
+  gst_amf_node_set_string (n2, rtmp2src->stream);
   n3 = gst_amf_node_new (GST_AMF_TYPE_NUMBER);
   gst_amf_node_set_number (n3, 0);
   gst_rtmp_connection_send_command2 (rtmp2src->connection, 8, 1, "play", 3, n1,
@@ -481,8 +590,9 @@ play_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   }
 
   if (ret) {
-    GST_ERROR ("play success, stream_id=%d", stream_id);
-
+    GST_DEBUG ("play success, stream_id=%d", stream_id);
+  } else {
+    GST_ERROR ("play failed");
   }
 }
 
@@ -492,6 +602,7 @@ gst_rtmp2_src_stop (GstBaseSrc * src)
   GstRtmp2Src *rtmp2src = GST_RTMP2_SRC (src);
 
   GST_DEBUG_OBJECT (rtmp2src, "stop");
+
 
   return TRUE;
 }
@@ -563,6 +674,11 @@ gst_rtmp2_src_unlock (GstBaseSrc * src)
 
   GST_DEBUG_OBJECT (rtmp2src, "unlock");
 
+  rtmp2src->reset = TRUE;
+  g_mutex_lock (&rtmp2src->lock);
+  g_cond_signal (&rtmp2src->cond);
+  g_mutex_unlock (&rtmp2src->lock);
+
   return TRUE;
 }
 
@@ -573,6 +689,9 @@ gst_rtmp2_src_unlock_stop (GstBaseSrc * src)
   GstRtmp2Src *rtmp2src = GST_RTMP2_SRC (src);
 
   GST_DEBUG_OBJECT (rtmp2src, "unlock_stop");
+
+  gst_task_stop (rtmp2src->task);
+  g_main_loop_quit (rtmp2src->task_main_loop);
 
   return TRUE;
 }
@@ -608,16 +727,33 @@ gst_rtmp2_src_create (GstBaseSrc * src, guint64 offset, guint size,
   GstRtmp2Src *rtmp2src = GST_RTMP2_SRC (src);
   GstRtmpChunk *chunk;
   const char *data;
+  guint8 *buf_data;
   gsize payload_size;
 
   GST_DEBUG_OBJECT (rtmp2src, "create");
+
+  if (!rtmp2src->sent_header) {
+    static const guint8 header[] = {
+      0x46, 0x4c, 0x56, 0x01, 0x01, 0x00, 0x00, 0x00,
+      0x09, 0x00, 0x00, 0x00, 0x00,
+    };
+    guint8 *data;
+
+    rtmp2src->sent_header = TRUE;
+    data = g_memdup (header, sizeof (header));
+    data[4] = 0x1;              /* |4 with audio */
+    *buf =
+        gst_buffer_new_wrapped (g_memdup (header, sizeof (header)),
+        sizeof (header));
+    return GST_FLOW_OK;
+  }
 
   g_mutex_lock (&rtmp2src->lock);
   chunk = g_queue_pop_head (rtmp2src->queue);
   while (!chunk) {
     if (rtmp2src->reset) {
       g_mutex_unlock (&rtmp2src->lock);
-      return GST_FLOW_ERROR;
+      return GST_FLOW_FLUSHING;
     }
     g_cond_wait (&rtmp2src->cond, &rtmp2src->lock);
     chunk = g_queue_pop_head (rtmp2src->queue);
@@ -625,9 +761,20 @@ gst_rtmp2_src_create (GstBaseSrc * src, guint64 offset, guint size,
   g_mutex_unlock (&rtmp2src->lock);
 
   data = g_bytes_get_data (chunk->payload, &payload_size);
-  *buf =
-      gst_buffer_new_wrapped_full (0, (gpointer) data, payload_size, 0,
-      payload_size, chunk, g_object_unref);
+
+  buf_data = g_malloc (payload_size + 11 + 4);
+  buf_data[0] = chunk->message_type_id;
+  GST_WRITE_UINT24_BE (buf_data + 1, chunk->message_length);
+  GST_WRITE_UINT24_BE (buf_data + 4, chunk->timestamp);
+  buf_data[7] = 0;
+  buf_data[8] = 0;
+  buf_data[9] = 0;
+  buf_data[10] = 0;
+  memcpy (buf_data + 11, data, payload_size);
+  GST_WRITE_UINT32_BE (buf_data + payload_size + 11, payload_size + 11);
+  g_object_unref (chunk);
+
+  *buf = gst_buffer_new_wrapped (buf_data, payload_size + 11 + 4);
 
   return GST_FLOW_OK;
 }
@@ -643,4 +790,64 @@ gst_rtmp2_src_alloc (GstBaseSrc * src, guint64 offset, guint size,
   GST_DEBUG_OBJECT (rtmp2src, "alloc");
 
   return GST_FLOW_OK;
+}
+
+/* internal API */
+
+static gchar *
+gst_rtmp2_src_get_uri (GstRtmp2Src * src)
+{
+  if (src->port == 1935) {
+    return g_strdup_printf ("rtmp://%s/%s/%s", src->server_address,
+        src->application, src->stream);
+  } else {
+    return g_strdup_printf ("rtmp://%s:%d/%s/%s", src->server_address,
+        src->port, src->application, src->stream);
+  }
+}
+
+/* It would really be awesome if GStreamer had full URI parsing.  Alas. */
+/* FIXME this function needs more error checking, and testing */
+static gboolean
+gst_rtmp2_src_set_uri (GstRtmp2Src * src, const char *uri)
+{
+  gchar *location;
+  gchar **parts;
+  gchar **parts2;
+  gboolean ret;
+
+  GST_DEBUG ("setting uri to %s", uri);
+
+  if (!gst_uri_has_protocol (uri, "rtmp"))
+    return FALSE;
+
+  location = gst_uri_get_location (uri);
+
+  parts = g_strsplit (location, "/", 3);
+  if (parts[0] == NULL || parts[1] == NULL || parts[2] == NULL) {
+    ret = FALSE;
+    goto out;
+  }
+
+  parts2 = g_strsplit (parts[0], ":", 2);
+  if (parts2[1]) {
+    src->port = g_ascii_strtoull (parts2[1], NULL, 10);
+  } else {
+    src->port = 1935;
+  }
+  g_free (src->server_address);
+  src->server_address = g_strdup (parts2[0]);
+  g_strfreev (parts2);
+
+  g_free (src->application);
+  src->application = g_strdup (parts[1]);
+  g_free (src->stream);
+  src->stream = g_strdup (parts[2]);
+
+  ret = TRUE;
+
+out:
+  g_free (location);
+  g_strfreev (parts);
+  return ret;
 }

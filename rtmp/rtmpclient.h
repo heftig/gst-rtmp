@@ -61,6 +61,7 @@ struct _GstRtmpClient
   char *server_address;
   int server_port;
   char *stream;
+  int timeout;
 
   /* private */
   GstRtmpClientState state;

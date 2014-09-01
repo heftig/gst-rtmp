@@ -51,11 +51,13 @@ enum
 {
   PROP_0,
   PROP_SERVER_ADDRESS,
-  PROP_SERVER_PORT
+  PROP_SERVER_PORT,
+  PROP_TIMEOUT
 };
 
 #define DEFAULT_SERVER_ADDRESS ""
 #define DEFAULT_SERVER_PORT 1935
+#define DEFAULT_TIMEOUT 5
 
 /* pad templates */
 
@@ -75,6 +77,21 @@ gst_rtmp_client_class_init (GstRtmpClientClass * klass)
   gobject_class->get_property = gst_rtmp_client_get_property;
   gobject_class->dispose = gst_rtmp_client_dispose;
   gobject_class->finalize = gst_rtmp_client_finalize;
+
+  g_object_class_install_property (gobject_class, PROP_SERVER_ADDRESS,
+      g_param_spec_string ("server-address", "RTMP Server Address",
+          "Address of RTMP server",
+          DEFAULT_SERVER_ADDRESS, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_SERVER_PORT,
+      g_param_spec_int ("port", "RTMP server port",
+          "RTMP server port (usually 1935)",
+          1, 65535, DEFAULT_SERVER_PORT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_TIMEOUT,
+      g_param_spec_int ("timeout", "Socket timeout",
+          "Socket timeout, in seconds", 0, 1000, DEFAULT_TIMEOUT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
 }
 
 static void
@@ -100,6 +117,9 @@ gst_rtmp_client_set_property (GObject * object, guint property_id,
     case PROP_SERVER_PORT:
       gst_rtmp_client_set_server_port (rtmpclient, g_value_get_int (value));
       break;
+    case PROP_TIMEOUT:
+      rtmpclient->timeout = g_value_get_int (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -120,6 +140,9 @@ gst_rtmp_client_get_property (GObject * object, guint property_id,
       break;
     case PROP_SERVER_PORT:
       g_value_set_int (value, rtmpclient->server_port);
+      break;
+    case PROP_TIMEOUT:
+      g_value_set_int (value, rtmpclient->timeout);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -206,7 +229,7 @@ gst_rtmp_client_connect_async (GstRtmpClient * client,
 
   addr = g_network_address_new (client->server_address, client->server_port);
   client->socket_client = g_socket_client_new ();
-  g_socket_client_set_timeout (client->socket_client, 5);
+  g_socket_client_set_timeout (client->socket_client, client->timeout);
 
   GST_DEBUG ("g_socket_client_connect_async");
   g_socket_client_connect_async (client->socket_client, addr,

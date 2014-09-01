@@ -71,10 +71,19 @@ static void gst_rtmp_connection_start_output (GstRtmpConnection * sc);
 static void
 gst_rtmp_connection_handle_pcm (GstRtmpConnection * connection,
     GstRtmpChunk * chunk);
+static void
+gst_rtmp_connection_handle_user_control (GstRtmpConnection * connectin,
+    guint32 event_type, guint32 event_data);
 static void gst_rtmp_connection_handle_chunk (GstRtmpConnection * sc,
     GstRtmpChunk * chunk);
 
 static void gst_rtmp_connection_server_handshake1 (GstRtmpConnection * sc);
+static void gst_rtmp_connection_send_ack (GstRtmpConnection * connection);
+static void
+gst_rtmp_connection_send_ping_response (GstRtmpConnection * connection,
+    guint32 event_data);
+static void gst_rtmp_connection_send_window_size_request (GstRtmpConnection *
+    connection);
 
 typedef struct _CommandCallback CommandCallback;
 struct _CommandCallback
@@ -241,7 +250,15 @@ gst_rtmp_connection_input_ready (GInputStream * is, gpointer user_data)
       g_pollable_input_stream_read_nonblocking (G_POLLABLE_INPUT_STREAM (is),
       data, 4096, sc->cancellable, &error);
   if (ret < 0) {
-    GST_ERROR ("read error: %s", error->message);
+    if (error->code == G_IO_ERROR_TIMED_OUT) {
+      /* should retry */
+      GST_ERROR ("timeout, continuing");
+      g_error_free (error);
+      return G_SOURCE_CONTINUE;
+    } else {
+      GST_ERROR ("read error: %s %d %s", g_quark_to_string (error->domain),
+          error->code, error->message);
+    }
     g_error_free (error);
     return G_SOURCE_REMOVE;
   }
@@ -256,6 +273,11 @@ gst_rtmp_connection_input_ready (GInputStream * is, gpointer user_data)
     sc->input_bytes = gst_rtmp_bytes_append (sc->input_bytes, data, ret);
   } else {
     sc->input_bytes = g_bytes_new_take (data, ret);
+  }
+  sc->total_input_bytes += ret;
+  sc->bytes_since_ack += ret;
+  if (sc->bytes_since_ack >= sc->window_ack_size) {
+    gst_rtmp_connection_send_ack (sc);
   }
 
   GST_DEBUG ("needed: %" G_GSIZE_FORMAT, sc->input_needed_bytes);
@@ -622,27 +644,69 @@ gst_rtmp_connection_handle_pcm (GstRtmpConnection * connection,
       break;
     case 0x02:
       moo = GST_READ_UINT32_BE (data);
-      GST_INFO ("chunk abort, stream_id = %d", moo);
+      GST_ERROR ("unimplemented: chunk abort, stream_id = %d", moo);
       break;
     case 0x03:
       moo = GST_READ_UINT32_BE (data);
-      GST_INFO ("acknowledgement %d", moo);
+      /* We don't really send ack requests that we care about, so ignore */
+      GST_ERROR ("acknowledgement %d", moo);
       break;
     case 0x04:
       moo = GST_READ_UINT16_BE (data);
       moo2 = GST_READ_UINT32_BE (data + 2);
-      GST_INFO ("control: %d, %d", moo, moo2);
+      GST_INFO ("user control: %d, %d", moo, moo2);
+      gst_rtmp_connection_handle_user_control (connection, moo, moo2);
       break;
     case 0x05:
       moo = GST_READ_UINT32_BE (data);
       GST_INFO ("window ack size: %d", moo);
+      connection->window_ack_size = GST_READ_UINT32_BE (data);
       break;
     case 0x06:
       moo = GST_READ_UINT32_BE (data);
-      GST_INFO ("set peer bandwidth: %d", moo);
+      moo2 = data[4];
+      GST_DEBUG ("set peer bandwidth: %d, %d", moo, moo2);
+      /* FIXME this is not correct, but close enough */
+      if (connection->peer_bandwidth != moo) {
+        connection->peer_bandwidth = moo;
+        gst_rtmp_connection_send_window_size_request (connection);
+      }
       break;
     default:
       GST_ERROR ("unimplemented");
+      break;
+  }
+}
+
+static void
+gst_rtmp_connection_handle_user_control (GstRtmpConnection * connection,
+    guint32 event_type, guint32 event_data)
+{
+  switch (event_type) {
+    case 0x00:
+      GST_DEBUG ("stream begin: %d", event_data);
+      break;
+    case 0x01:
+      GST_ERROR ("stream EOF: %d", event_data);
+      break;
+    case 0x02:
+      GST_ERROR ("stream dry: %d", event_data);
+      break;
+    case 0x03:
+      GST_ERROR ("set buffer length: %d", event_data);
+      break;
+    case 0x04:
+      GST_ERROR ("stream is recorded: %d", event_data);
+      break;
+    case 0x06:
+      GST_DEBUG ("ping request: %d", event_data);
+      gst_rtmp_connection_send_ping_response (connection, event_data);
+      break;
+    case 0x07:
+      GST_ERROR ("ping response: %d", event_data);
+      break;
+    default:
+      GST_ERROR ("unimplemented: %d, %d", event_type, event_data);
       break;
   }
 }
@@ -892,4 +956,68 @@ gst_rtmp_connection_send_command2 (GstRtmpConnection * connection,
   }
 
   return transaction_id;
+}
+
+static void
+gst_rtmp_connection_send_ack (GstRtmpConnection * connection)
+{
+  GstRtmpChunk *chunk;
+  guint8 *data;
+
+  chunk = gst_rtmp_chunk_new ();
+  chunk->stream_id = 2;
+  chunk->timestamp = 0;
+  chunk->message_type_id = 3;
+  chunk->info = 0;
+
+  data = g_malloc (4);
+  GST_WRITE_UINT32_BE (data, connection->total_input_bytes);
+  chunk->payload = g_bytes_new_take (data, 4);
+  chunk->message_length = g_bytes_get_size (chunk->payload);
+
+  gst_rtmp_connection_queue_chunk (connection, chunk);
+
+  connection->bytes_since_ack = 0;
+}
+
+static void
+gst_rtmp_connection_send_ping_response (GstRtmpConnection * connection,
+    guint32 event_data)
+{
+  GstRtmpChunk *chunk;
+  guint8 *data;
+
+  chunk = gst_rtmp_chunk_new ();
+  chunk->stream_id = 2;
+  chunk->timestamp = 0;
+  chunk->message_type_id = 4;
+  chunk->info = 0;
+
+  data = g_malloc (8);
+  GST_WRITE_UINT32_BE (data, 7);
+  GST_WRITE_UINT32_BE (data + 4, event_data);
+  chunk->payload = g_bytes_new_take (data, 8);
+  chunk->message_length = g_bytes_get_size (chunk->payload);
+
+  gst_rtmp_connection_queue_chunk (connection, chunk);
+}
+
+static void
+gst_rtmp_connection_send_window_size_request (GstRtmpConnection * connection)
+{
+  GstRtmpChunk *chunk;
+  guint8 *data;
+
+  chunk = gst_rtmp_chunk_new ();
+  chunk->stream_id = 2;
+  chunk->timestamp = 0;
+  chunk->message_type_id = 5;
+  chunk->info = 0;
+
+  data = g_malloc (4);
+  GST_WRITE_UINT32_BE (data, connection->peer_bandwidth);
+  chunk->payload = g_bytes_new_take (data, 4);
+  chunk->message_length = g_bytes_get_size (chunk->payload);
+
+  gst_rtmp_connection_queue_chunk (connection, chunk);
 }

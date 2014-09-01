@@ -39,14 +39,23 @@ struct _GstRtmp2Src
 {
   GstPushSrc base_rtmp2src;
 
+  /* properties */
   char *uri;
+  int timeout;
+  char *server_address;
+  int port;
+  char *application;
+  char *stream;
 
+  /* stuff */
+  gboolean sent_header;
   GMutex lock;
   GCond cond;
   GQueue *queue;
   gboolean reset;
   GstTask *task;
   GRecMutex task_lock;
+  GMainLoop *task_main_loop;
 
   GstRtmpClient *client;
   GstRtmpConnection *connection;

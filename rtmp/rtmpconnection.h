@@ -74,6 +74,10 @@ struct _GstRtmpConnection
   /* RTMP configuration */
   gsize in_chunk_size;
   gsize out_chunk_size;
+  gsize window_ack_size;
+  gsize total_input_bytes;
+  gsize bytes_since_ack;
+  gsize peer_bandwidth;
 };
 
 struct _GstRtmpConnectionClass
