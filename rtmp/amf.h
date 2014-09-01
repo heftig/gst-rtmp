@@ -65,6 +65,7 @@ GstAmfNode * gst_amf_node_new_parse (const guint8 *data, gsize size,
 void gst_amf_node_set_boolean (GstAmfNode *node, gboolean val);
 void gst_amf_node_set_number (GstAmfNode *node, double val);
 void gst_amf_node_set_string (GstAmfNode *node, const char *s);
+void gst_amf_node_set_binary_string_take (GstAmfNode *node, guint8 *s, gsize size);
 void gst_amf_node_set_string_take (GstAmfNode *node, char *s);
 void gst_amf_node_set_ecma_array (GstAmfNode *node, guint8 *data, int size);
 void gst_amf_object_append_take (GstAmfNode *node, const char *s,

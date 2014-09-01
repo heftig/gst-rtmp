@@ -46,6 +46,7 @@ struct _GstRtmp2Src
   int port;
   char *application;
   char *stream;
+  char *secure_token;
 
   /* stuff */
   gboolean sent_header;

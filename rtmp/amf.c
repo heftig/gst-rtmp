@@ -299,6 +299,14 @@ gst_amf_node_set_string_take (GstAmfNode * node, char *s)
 }
 
 void
+gst_amf_node_set_binary_string_take (GstAmfNode * node, guint8 * s, gsize size)
+{
+  g_return_if_fail (node->type == GST_AMF_TYPE_STRING);
+  /* FIXME this needs to take NUL chars in string */
+  node->string_val = (gchar *) s;
+}
+
+void
 gst_amf_object_append_take (GstAmfNode * node, const char *s,
     GstAmfNode * child_node)
 {

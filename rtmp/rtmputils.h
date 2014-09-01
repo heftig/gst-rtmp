@@ -27,6 +27,9 @@ G_BEGIN_DECLS
 void gst_rtmp_dump_data (GBytes * bytes);
 GBytes *gst_rtmp_bytes_append (GBytes *bytes, guint8 *data, gsize size);
 GBytes *gst_rtmp_bytes_remove (GBytes *bytes, gsize size);
+gchar * gst_rtmp_hexify (const guint8 *src, gsize size);
+guint8 * gst_rtmp_unhexify (const char *src, gsize *size);
+gchar * gst_rtmp_tea_decode (const gchar *key, const gchar *text);
 
 G_END_DECLS
 

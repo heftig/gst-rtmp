@@ -93,6 +93,8 @@ static void send_play (GstRtmp2Src * src);
 static void play_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     const char *command_name, int transaction_id, GstAmfNode * command_object,
     GstAmfNode * optional_args, gpointer user_data);
+static void send_secure_token_response (GstRtmp2Src * rtmp2src,
+    const char *challenge);
 
 static gchar *gst_rtmp2_src_get_uri (GstRtmp2Src * src);
 static gboolean gst_rtmp2_src_set_uri (GstRtmp2Src * src, const char *uri);
@@ -105,7 +107,8 @@ enum
   PROP_SERVER_ADDRESS,
   PROP_PORT,
   PROP_APPLICATION,
-  PROP_STREAM
+  PROP_STREAM,
+  PROP_SECURE_TOKEN
 };
 
 #define DEFAULT_LOCATION "rtmp://localhost/live/myStream"
@@ -114,6 +117,9 @@ enum
 #define DEFAULT_PORT 1935
 #define DEFAULT_APPLICATION "live"
 #define DEFAULT_STREAM "myStream"
+//#define DEFAULT_SECURE_TOKEN ""
+/* FIXME for testing only */
+#define DEFAULT_SECURE_TOKEN "4305c027c2758beb"
 
 /* pad templates */
 
@@ -129,10 +135,11 @@ GST_STATIC_PAD_TEMPLATE ("src",
 
 G_DEFINE_TYPE_WITH_CODE (GstRtmp2Src, gst_rtmp2_src, GST_TYPE_PUSH_SRC,
     do {
-    G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER,
+      G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER,
           gst_rtmp2_src_uri_handler_init);
       GST_DEBUG_CATEGORY_INIT (gst_rtmp2_src_debug_category, "rtmp2src", 0,
-          "debug category for rtmp2src element");} while (0));
+          "debug category for rtmp2src element");
+    } while (0));
 
 static void
 gst_rtmp2_src_class_init (GstRtmp2SrcClass * klass)
@@ -189,6 +196,10 @@ gst_rtmp2_src_class_init (GstRtmp2SrcClass * klass)
       g_param_spec_string ("stream", "RTMP stream",
           "RTMP stream",
           DEFAULT_STREAM, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_SECURE_TOKEN,
+      g_param_spec_string ("secure-token", "Secure token",
+          "Secure token used for authentication",
+          DEFAULT_SECURE_TOKEN, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
 }
 
@@ -202,6 +213,7 @@ gst_rtmp2_src_init (GstRtmp2Src * rtmp2src)
 
   rtmp2src->timeout = DEFAULT_TIMEOUT;
   gst_rtmp2_src_set_uri (rtmp2src, DEFAULT_LOCATION);
+  rtmp2src->secure_token = g_strdup (DEFAULT_SECURE_TOKEN);
 
   rtmp2src->task = gst_task_new (gst_rtmp2_src_task, rtmp2src, NULL);
   g_rec_mutex_init (&rtmp2src->task_lock);
@@ -288,6 +300,10 @@ gst_rtmp2_src_set_property (GObject * object, guint property_id,
       g_free (rtmp2src->stream);
       rtmp2src->stream = g_value_dup_string (value);
       break;
+    case PROP_SECURE_TOKEN:
+      g_free (rtmp2src->secure_token);
+      rtmp2src->secure_token = g_value_dup_string (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -317,6 +333,9 @@ gst_rtmp2_src_get_property (GObject * object, guint property_id,
       break;
     case PROP_STREAM:
       g_value_set_string (value, rtmp2src->stream);
+      break;
+    case PROP_SECURE_TOKEN:
+      g_value_set_string (value, rtmp2src->secure_token);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -515,7 +534,17 @@ cmd_connect_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   }
 
   if (ret) {
+    const GstAmfNode *n;
+
     GST_DEBUG ("success");
+
+    n = gst_amf_node_get_object (optional_args, "secureToken");
+    if (n) {
+      const gchar *challenge;
+      challenge = gst_amf_node_get_string (n);
+      GST_DEBUG ("secureToken challenge: %s", challenge);
+      send_secure_token_response (rtmp2src, challenge);
+    }
 
     send_create_stream (rtmp2src);
   } else {
@@ -850,4 +879,30 @@ out:
   g_free (location);
   g_strfreev (parts);
   return ret;
+}
+
+static void
+send_secure_token_response (GstRtmp2Src * rtmp2src, const char *challenge)
+{
+  GstAmfNode *node1;
+  GstAmfNode *node2;
+  gchar *response;
+
+  if (rtmp2src->secure_token == NULL || !rtmp2src->secure_token[0]) {
+    GST_ELEMENT_ERROR (rtmp2src, RESOURCE, OPEN_READ,
+        ("Server requested secureToken authentication"), (NULL));
+    return;
+  }
+
+  response = gst_rtmp_tea_decode (rtmp2src->secure_token, challenge);
+
+  GST_DEBUG ("response: %s", response);
+
+  node1 = gst_amf_node_new (GST_AMF_TYPE_NULL);
+  node2 = gst_amf_node_new (GST_AMF_TYPE_STRING);
+  gst_amf_node_set_string_take (node2, response);
+
+  gst_rtmp_connection_send_command (rtmp2src->connection, 3,
+      "secureTokenResponse", 0, node1, node2, NULL, NULL);
+
 }
