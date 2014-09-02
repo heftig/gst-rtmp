@@ -547,8 +547,10 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
     }
 
     remaining_bytes = header.message_length - entry->offset;
-    if (header.message_type_id == 0x12 || header.message_type_id == 0x09 ||
-        header.message_type_id == 0x14) {
+    /* FIXME this is probably all message types */
+    if (header.message_type_id == GST_RTMP_MESSAGE_TYPE_DATA ||
+        header.message_type_id == GST_RTMP_MESSAGE_TYPE_VIDEO ||
+        header.message_type_id == GST_RTMP_MESSAGE_TYPE_COMMAND) {
       chunk_bytes = MIN (remaining_bytes, sc->in_chunk_size);
     } else {
       chunk_bytes = remaining_bytes;
@@ -600,13 +602,13 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
 static void
 gst_rtmp_connection_handle_chunk (GstRtmpConnection * sc, GstRtmpChunk * chunk)
 {
-  if (chunk->chunk_stream_id == 0x02) {
+  if (chunk->chunk_stream_id == GST_RTMP_CHUNK_STREAM_PROTOCOL) {
     GST_DEBUG ("got protocol control message, type: %d",
         chunk->message_type_id);
     gst_rtmp_connection_handle_pcm (sc, chunk);
     g_signal_emit_by_name (sc, "got-control-chunk", chunk);
   } else {
-    if (chunk->message_type_id == 0x14) {
+    if (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_COMMAND) {
       CommandCallback *cb = NULL;
       GList *g;
       char *command_name;
@@ -649,32 +651,32 @@ gst_rtmp_connection_handle_pcm (GstRtmpConnection * connection,
   guint32 moo2;
   data = g_bytes_get_data (chunk->payload, &size);
   switch (chunk->message_type_id) {
-    case 0x01:
+    case GST_RTMP_MESSAGE_TYPE_SET_CHUNK_SIZE:
       moo = GST_READ_UINT32_BE (data);
       GST_INFO ("new chunk size %d", moo);
       connection->in_chunk_size = moo;
       break;
-    case 0x02:
+    case GST_RTMP_MESSAGE_TYPE_ABORT:
       moo = GST_READ_UINT32_BE (data);
       GST_ERROR ("unimplemented: chunk abort, stream_id = %d", moo);
       break;
-    case 0x03:
+    case GST_RTMP_MESSAGE_TYPE_ACKNOWLEDGEMENT:
       moo = GST_READ_UINT32_BE (data);
       /* We don't really send ack requests that we care about, so ignore */
-      GST_ERROR ("acknowledgement %d", moo);
+      GST_DEBUG ("acknowledgement %d", moo);
       break;
-    case 0x04:
+    case GST_RTMP_MESSAGE_TYPE_USER_CONTROL:
       moo = GST_READ_UINT16_BE (data);
       moo2 = GST_READ_UINT32_BE (data + 2);
       GST_INFO ("user control: %d, %d", moo, moo2);
       gst_rtmp_connection_handle_user_control (connection, moo, moo2);
       break;
-    case 0x05:
+    case GST_RTMP_MESSAGE_TYPE_WINDOW_ACK_SIZE:
       moo = GST_READ_UINT32_BE (data);
       GST_INFO ("window ack size: %d", moo);
       connection->window_ack_size = GST_READ_UINT32_BE (data);
       break;
-    case 0x06:
+    case GST_RTMP_MESSAGE_TYPE_SET_PEER_BANDWIDTH:
       moo = GST_READ_UINT32_BE (data);
       moo2 = data[4];
       GST_DEBUG ("set peer bandwidth: %d, %d", moo, moo2);
@@ -685,7 +687,8 @@ gst_rtmp_connection_handle_pcm (GstRtmpConnection * connection,
       }
       break;
     default:
-      GST_ERROR ("unimplemented");
+      GST_ERROR ("unimplemented protocol control, type %d",
+          chunk->message_type_id);
       break;
   }
 }
@@ -695,26 +698,26 @@ gst_rtmp_connection_handle_user_control (GstRtmpConnection * connection,
     guint32 event_type, guint32 event_data)
 {
   switch (event_type) {
-    case 0x00:
+    case GST_RTMP_USER_CONTROL_STREAM_BEGIN:
       GST_DEBUG ("stream begin: %d", event_data);
       break;
-    case 0x01:
+    case GST_RTMP_USER_CONTROL_STREAM_EOF:
       GST_ERROR ("stream EOF: %d", event_data);
       break;
-    case 0x02:
+    case GST_RTMP_USER_CONTROL_STREAM_DRY:
       GST_ERROR ("stream dry: %d", event_data);
       break;
-    case 0x03:
+    case GST_RTMP_USER_CONTROL_SET_BUFFER_LENGTH:
       GST_ERROR ("set buffer length: %d", event_data);
       break;
-    case 0x04:
+    case GST_RTMP_USER_CONTROL_STREAM_IS_RECORDED:
       GST_ERROR ("stream is recorded: %d", event_data);
       break;
-    case 0x06:
+    case GST_RTMP_USER_CONTROL_PING_REQUEST:
       GST_DEBUG ("ping request: %d", event_data);
       gst_rtmp_connection_send_ping_response (connection, event_data);
       break;
-    case 0x07:
+    case GST_RTMP_USER_CONTROL_PING_RESPONSE:
       GST_ERROR ("ping response: %d", event_data);
       break;
     default:
@@ -908,7 +911,7 @@ gst_rtmp_connection_send_command (GstRtmpConnection * connection,
   chunk = gst_rtmp_chunk_new ();
   chunk->chunk_stream_id = chunk_stream_id;
   chunk->timestamp = 0;         /* FIXME */
-  chunk->message_type_id = 0x14;
+  chunk->message_type_id = GST_RTMP_MESSAGE_TYPE_COMMAND;
   chunk->stream_id = 0;         /* FIXME */
 
   chunk->payload = gst_amf_serialize_command (command_name, transaction_id,
@@ -945,7 +948,7 @@ gst_rtmp_connection_send_command2 (GstRtmpConnection * connection,
   chunk = gst_rtmp_chunk_new ();
   chunk->chunk_stream_id = chunk_stream_id;
   chunk->timestamp = 0;         /* FIXME */
-  chunk->message_type_id = 0x14;
+  chunk->message_type_id = GST_RTMP_MESSAGE_TYPE_COMMAND;
   chunk->stream_id = stream_id;
 
   chunk->payload = gst_amf_serialize_command2 (command_name, transaction_id,

@@ -469,7 +469,8 @@ gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
   chunk = gst_rtmp_chunk_new ();
   chunk->message_type_id = data[0];
   chunk->chunk_stream_id = 4;
-  if (chunk->message_type_id == 18 || chunk->message_type_id == 9) {
+  if (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_DATA ||
+      chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_VIDEO) {
   } else {
     GST_ERROR ("unknown message_type_id %d", chunk->message_type_id);
   }
@@ -482,7 +483,7 @@ gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
         G_GSIZE_FORMAT, chunk->message_length, size - 15);
   }
 
-  if (chunk->message_type_id == 18) {
+  if (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_DATA) {
     static const guint8 header[] = {
       0x02, 0x00, 0x0d, 0x40, 0x73, 0x65, 0x74, 0x44,
       0x61, 0x74, 0x61, 0x46, 0x72, 0x61, 0x6d, 0x65

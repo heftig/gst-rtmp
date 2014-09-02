@@ -418,9 +418,10 @@ got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gst_rtmp_dump_chunk (chunk, FALSE, TRUE, TRUE);
   }
 
-  if ((chunk->chunk_stream_id == 7 && chunk->message_type_id == 9) ||
-      (chunk->chunk_stream_id == 5 && chunk->message_type_id == 18
-          && chunk->message_length > 100)) {
+  if (chunk->stream_id != 0 &&
+      (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_VIDEO ||
+          (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_DATA
+              && chunk->message_length > 100))) {
     g_object_ref (chunk);
     g_mutex_lock (&rtmp2src->lock);
     g_queue_push_tail (rtmp2src->queue, chunk);
@@ -733,10 +734,7 @@ gst_rtmp2_src_create (GstBaseSrc * src, guint64 offset, guint size,
   buf_data[0] = chunk->message_type_id;
   GST_WRITE_UINT24_BE (buf_data + 1, chunk->message_length);
   GST_WRITE_UINT24_BE (buf_data + 4, chunk->timestamp);
-  buf_data[7] = 0;
-  buf_data[8] = 0;
-  buf_data[9] = 0;
-  buf_data[10] = 0;
+  GST_WRITE_UINT24_BE (buf_data + 7, 0);
   memcpy (buf_data + 11, data, payload_size);
   GST_WRITE_UINT32_BE (buf_data + payload_size + 11, payload_size + 11);
   g_object_unref (chunk);

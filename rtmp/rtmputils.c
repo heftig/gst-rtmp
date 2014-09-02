@@ -210,10 +210,8 @@ gst_rtmp_dump_chunk (GstRtmpChunk * chunk, gboolean dir, gboolean dump_message,
       chunk->timestamp,
       chunk->message_length, chunk->message_type_id, chunk->stream_id);
   if (dump_message) {
-    if (chunk->message_type_id == 20) {
-      dump_command (chunk);
-    }
-    if (chunk->message_type_id == 18) {
+    if (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_COMMAND ||
+        GST_RTMP_MESSAGE_TYPE_DATA) {
       dump_command (chunk);
     }
   }

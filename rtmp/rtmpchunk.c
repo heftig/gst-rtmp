@@ -141,11 +141,11 @@ gst_rtmp_chunk_parse_header1 (GstRtmpChunkHeader * header, GBytes * bytes)
   header->header_size = sizes[header->format];
 
   chunk_stream_id = data[0] & 0x3f;
-  if (chunk_stream_id == 0) {
+  if (chunk_stream_id == GST_RTMP_CHUNK_STREAM_TWOBYTE) {
     if (size >= 2)
       header->chunk_stream_id = 64 + data[1];
     header->header_size += 1;
-  } else if (chunk_stream_id == 1) {
+  } else if (chunk_stream_id == GST_RTMP_CHUNK_STREAM_THREEBYTE) {
     if (size >= 3)
       header->chunk_stream_id = 64 + data[1] + (data[2] << 8);
     header->header_size += 2;
@@ -169,10 +169,10 @@ gst_rtmp_chunk_parse_header2 (GstRtmpChunkHeader * header, GBytes * bytes,
   header->format = data[0] >> 6;
   header->chunk_stream_id = data[0] & 0x3f;
   offset = 1;
-  if (header->chunk_stream_id == 0) {
+  if (header->chunk_stream_id == GST_RTMP_CHUNK_STREAM_TWOBYTE) {
     header->chunk_stream_id = 64 + data[1];
     offset = 2;
-  } else if (header->chunk_stream_id == 1) {
+  } else if (header->chunk_stream_id == GST_RTMP_CHUNK_STREAM_THREEBYTE) {
     header->chunk_stream_id = 64 + GST_READ_UINT16_LE (data + 1);
     offset = 3;
   }
@@ -254,8 +254,10 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
     data[7] = chunk->message_type_id;
     offset = 8;
   }
-  if (chunk->message_type_id == 0x12 || chunk->message_type_id == 0x09 ||
-      chunk->message_type_id == 0x14) {
+  /* FIXME this is probably all message types */
+  if (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_DATA ||
+      chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_VIDEO ||
+      chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_COMMAND) {
     for (i = 0; i < chunksize; i += max_chunk_size) {
       if (i != 0) {
         data[offset] = 0xc0 | chunk->chunk_stream_id;
