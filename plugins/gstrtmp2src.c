@@ -409,49 +409,13 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
 }
 
 static void
-dump_command (GstRtmpChunk * chunk)
-{
-  GstAmfNode *amf;
-  gsize size;
-  const guint8 *data;
-  gsize n_parsed;
-  int offset;
-
-  offset = 0;
-  data = g_bytes_get_data (chunk->payload, &size);
-  while (offset < size) {
-    amf = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
-    gst_amf_node_dump (amf);
-    gst_amf_node_free (amf);
-    offset += n_parsed;
-  }
-}
-
-static void
-dump_chunk (GstRtmpChunk * chunk, gboolean dir)
-{
-  g_print ("%s chunk_stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
-      " type_id:%-4d stream_id:%08x\n", dir ? ">>>" : "<<<",
-      chunk->chunk_stream_id,
-      chunk->timestamp,
-      chunk->message_length, chunk->message_type_id, chunk->stream_id);
-  if (chunk->message_type_id == 20) {
-    dump_command (chunk);
-  }
-  if (chunk->message_type_id == 18) {
-    dump_command (chunk);
-  }
-  gst_rtmp_dump_data (gst_rtmp_chunk_get_payload (chunk));
-}
-
-static void
 got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data)
 {
   GstRtmp2Src *rtmp2src = GST_RTMP2_SRC (user_data);
 
   if (rtmp2src->dump) {
-    dump_chunk (chunk, FALSE);
+    gst_rtmp_dump_chunk (chunk, FALSE, TRUE, TRUE);
   }
 
   if ((chunk->chunk_stream_id == 7 && chunk->message_type_id == 9) ||

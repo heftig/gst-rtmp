@@ -42,7 +42,6 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data);
 static void
 got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     gpointer user_data);
-static void dump_chunk (GstRtmpChunk * chunk, gboolean dir);
 static gboolean periodic (gpointer user_data);
 
 GstRtmpServer *server;
@@ -122,7 +121,7 @@ got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
 
   g_object_ref (chunk);
   if (proxy_conn) {
-    dump_chunk (chunk, TRUE);
+    gst_rtmp_dump_chunk (chunk, TRUE, TRUE, TRUE);
     gst_rtmp_connection_queue_chunk (proxy_conn, chunk);
   } else {
     if (verbose)
@@ -152,7 +151,7 @@ connect_done (GObject * source, GAsyncResult * result, gpointer user_data)
 
     proxy_conn = gst_rtmp_client_get_connection (client);
     server_connection = proxy_conn;
-    dump_chunk (proxy_chunk, TRUE);
+    gst_rtmp_dump_chunk (proxy_chunk, TRUE, TRUE, TRUE);
     gst_rtmp_connection_queue_chunk (proxy_conn, proxy_chunk);
     proxy_chunk = NULL;
   }
@@ -168,7 +167,7 @@ got_chunk_proxy (GstRtmpConnection * connection, GstRtmpChunk * chunk,
 {
   GST_INFO ("got chunk");
 
-  dump_chunk (chunk, FALSE);
+  gst_rtmp_dump_chunk (chunk, FALSE, TRUE, TRUE);
 
   g_object_ref (chunk);
   gst_rtmp_connection_queue_chunk (client_connection, chunk);
@@ -187,40 +186,4 @@ periodic (gpointer user_data)
     gst_rtmp_connection_dump (server_connection);
   }
   return G_SOURCE_CONTINUE;
-}
-
-static void
-dump_command (GstRtmpChunk * chunk)
-{
-  GstAmfNode *amf;
-  gsize size;
-  const guint8 *data;
-  gsize n_parsed;
-  int offset;
-
-  offset = 0;
-  data = g_bytes_get_data (chunk->payload, &size);
-  while (offset < size) {
-    amf = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
-    gst_amf_node_dump (amf);
-    gst_amf_node_free (amf);
-    offset += n_parsed;
-  }
-}
-
-static void
-dump_chunk (GstRtmpChunk * chunk, gboolean dir)
-{
-  if (!dump)
-    return;
-
-  g_print ("%s chunk_stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
-      " type_id:%-4d stream_id:%08x\n", dir ? ">>>" : "<<<",
-      chunk->chunk_stream_id,
-      chunk->timestamp,
-      chunk->message_length, chunk->message_type_id, chunk->stream_id);
-  if (chunk->message_type_id == 0x14 || chunk->message_type_id == 0x12) {
-    dump_command (chunk);
-  }
-  gst_rtmp_dump_data (gst_rtmp_chunk_get_payload (chunk));
 }

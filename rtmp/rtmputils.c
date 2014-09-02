@@ -180,3 +180,44 @@ gst_rtmp_tea_decode (const gchar * key, const gchar * text)
 
   return (gchar *) out;
 }
+
+static void
+dump_command (GstRtmpChunk * chunk)
+{
+  GstAmfNode *amf;
+  gsize size;
+  const guint8 *data;
+  gsize n_parsed;
+  int offset;
+
+  offset = 0;
+  data = g_bytes_get_data (chunk->payload, &size);
+  while (offset < size) {
+    amf = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
+    gst_amf_node_dump (amf);
+    gst_amf_node_free (amf);
+    offset += n_parsed;
+  }
+}
+
+void
+gst_rtmp_dump_chunk (GstRtmpChunk * chunk, gboolean dir, gboolean dump_message,
+    gboolean dump_data)
+{
+  g_print ("%s chunk_stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
+      " type_id:%-4d stream_id:%08x\n", dir ? ">>>" : "<<<",
+      chunk->chunk_stream_id,
+      chunk->timestamp,
+      chunk->message_length, chunk->message_type_id, chunk->stream_id);
+  if (dump_message) {
+    if (chunk->message_type_id == 20) {
+      dump_command (chunk);
+    }
+    if (chunk->message_type_id == 18) {
+      dump_command (chunk);
+    }
+  }
+  if (dump_data) {
+    gst_rtmp_dump_data (gst_rtmp_chunk_get_payload (chunk));
+  }
+}
