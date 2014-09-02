@@ -88,7 +88,7 @@ static void gst_rtmp_connection_send_window_size_request (GstRtmpConnection *
 typedef struct _CommandCallback CommandCallback;
 struct _CommandCallback
 {
-  int stream_id;
+  int chunk_stream_id;
   int transaction_id;
   GstRtmpCommandCallback func;
   gpointer user_data;
@@ -324,9 +324,12 @@ gst_rtmp_connection_output_ready (GOutputStream * os, gpointer user_data)
     }
     sc->output_chunk = chunk;
 
-    entry = gst_rtmp_chunk_cache_get (sc->output_chunk_cache, chunk->stream_id);
-    sc->output_bytes = gst_rtmp_chunk_serialize (chunk,
-        &entry->previous_header, sc->out_chunk_size);
+    entry =
+        gst_rtmp_chunk_cache_get (sc->output_chunk_cache,
+        chunk->chunk_stream_id);
+    sc->output_bytes =
+        gst_rtmp_chunk_serialize (chunk, &entry->previous_header,
+        sc->out_chunk_size);
     g_bytes_ref (sc->output_bytes);
     gst_rtmp_chunk_cache_update (entry, chunk);
   }
@@ -528,7 +531,9 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
       break;
     }
 
-    entry = gst_rtmp_chunk_cache_get (sc->input_chunk_cache, header.stream_id);
+    entry =
+        gst_rtmp_chunk_cache_get (sc->input_chunk_cache,
+        header.chunk_stream_id);
 
     if (entry->chunk && header.format != 3) {
       GST_ERROR ("expected message continuation, but got new message");
@@ -557,7 +562,7 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
 
     if (entry->chunk == NULL) {
       entry->chunk = gst_rtmp_chunk_new ();
-      entry->chunk->stream_id = header.stream_id;
+      entry->chunk->chunk_stream_id = header.chunk_stream_id;
       entry->chunk->timestamp = header.timestamp;
       entry->chunk->message_length = header.message_length;
       entry->chunk->message_type_id = header.message_type_id;
@@ -595,7 +600,7 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
 static void
 gst_rtmp_connection_handle_chunk (GstRtmpConnection * sc, GstRtmpChunk * chunk)
 {
-  if (chunk->stream_id == 0x02) {
+  if (chunk->chunk_stream_id == 0x02) {
     GST_DEBUG ("got protocol control message, type: %d",
         chunk->message_type_id);
     gst_rtmp_connection_handle_pcm (sc, chunk);
@@ -613,7 +618,7 @@ gst_rtmp_connection_handle_chunk (GstRtmpConnection * sc, GstRtmpChunk * chunk)
           &command_object, &optional_args);
       for (g = sc->command_callbacks; g; g = g_list_next (g)) {
         cb = g->data;
-        if (cb->stream_id == chunk->stream_id &&
+        if (cb->chunk_stream_id == chunk->chunk_stream_id &&
             cb->transaction_id == transaction_id) {
           break;
         }
@@ -893,15 +898,15 @@ gst_rtmp_connection_dump (GstRtmpConnection * connection)
 }
 
 int
-gst_rtmp_connection_send_command (GstRtmpConnection * connection, int stream_id,
-    const char *command_name, int transaction_id, GstAmfNode * command_object,
-    GstAmfNode * optional_args, GstRtmpCommandCallback response_command,
-    gpointer user_data)
+gst_rtmp_connection_send_command (GstRtmpConnection * connection,
+    int chunk_stream_id, const char *command_name, int transaction_id,
+    GstAmfNode * command_object, GstAmfNode * optional_args,
+    GstRtmpCommandCallback response_command, gpointer user_data)
 {
   GstRtmpChunk *chunk;
 
   chunk = gst_rtmp_chunk_new ();
-  chunk->stream_id = stream_id;
+  chunk->chunk_stream_id = chunk_stream_id;
   chunk->timestamp = 0;         /* FIXME */
   chunk->message_type_id = 0x14;
   chunk->info = 0;              /* FIXME */
@@ -916,7 +921,7 @@ gst_rtmp_connection_send_command (GstRtmpConnection * connection, int stream_id,
     CommandCallback *callback;
 
     callback = g_malloc0 (sizeof (CommandCallback));
-    callback->stream_id = stream_id;
+    callback->chunk_stream_id = chunk_stream_id;
     callback->transaction_id = transaction_id;
     callback->func = response_command;
     callback->user_data = user_data;
@@ -938,7 +943,7 @@ gst_rtmp_connection_send_command2 (GstRtmpConnection * connection,
   GstRtmpChunk *chunk;
 
   chunk = gst_rtmp_chunk_new ();
-  chunk->stream_id = chunk_stream_id;
+  chunk->chunk_stream_id = chunk_stream_id;
   chunk->timestamp = 0;         /* FIXME */
   chunk->message_type_id = 0x14;
   chunk->info = stream_id;
@@ -953,7 +958,7 @@ gst_rtmp_connection_send_command2 (GstRtmpConnection * connection,
     CommandCallback *callback;
 
     callback = g_malloc0 (sizeof (CommandCallback));
-    callback->stream_id = stream_id;
+    callback->chunk_stream_id = chunk_stream_id;
     callback->transaction_id = transaction_id;
     callback->func = response_command;
     callback->user_data = user_data;
@@ -972,7 +977,7 @@ gst_rtmp_connection_send_ack (GstRtmpConnection * connection)
   guint8 *data;
 
   chunk = gst_rtmp_chunk_new ();
-  chunk->stream_id = 2;
+  chunk->chunk_stream_id = 2;
   chunk->timestamp = 0;
   chunk->message_type_id = 5;
   chunk->info = 0;
@@ -995,7 +1000,7 @@ gst_rtmp_connection_send_ping_response (GstRtmpConnection * connection,
   guint8 *data;
 
   chunk = gst_rtmp_chunk_new ();
-  chunk->stream_id = 2;
+  chunk->chunk_stream_id = 2;
   chunk->timestamp = 0;
   chunk->message_type_id = 4;
   chunk->info = 0;
@@ -1016,7 +1021,7 @@ gst_rtmp_connection_send_window_size_request (GstRtmpConnection * connection)
   guint8 *data;
 
   chunk = gst_rtmp_chunk_new ();
-  chunk->stream_id = 2;
+  chunk->chunk_stream_id = 2;
   chunk->timestamp = 0;
   chunk->message_type_id = 5;
   chunk->info = 0;

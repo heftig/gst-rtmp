@@ -133,24 +133,24 @@ gst_rtmp_chunk_parse_header1 (GstRtmpChunkHeader * header, GBytes * bytes)
 {
   const guint8 *data;
   const gsize sizes[4] = { 12, 8, 4, 1 };
-  int stream_id;
+  int chunk_stream_id;
   gsize size;
 
   data = g_bytes_get_data (bytes, &size);
   header->format = data[0] >> 6;
   header->header_size = sizes[header->format];
 
-  stream_id = data[0] & 0x3f;
-  if (stream_id == 0) {
+  chunk_stream_id = data[0] & 0x3f;
+  if (chunk_stream_id == 0) {
     if (size >= 2)
-      header->stream_id = 64 + data[1];
+      header->chunk_stream_id = 64 + data[1];
     header->header_size += 1;
-  } else if (stream_id == 1) {
+  } else if (chunk_stream_id == 1) {
     if (size >= 3)
-      header->stream_id = 64 + data[1] + (data[2] << 8);
+      header->chunk_stream_id = 64 + data[1] + (data[2] << 8);
     header->header_size += 2;
   } else {
-    header->stream_id = stream_id;
+    header->chunk_stream_id = chunk_stream_id;
   }
 
   return (header->header_size <= size);
@@ -167,13 +167,13 @@ gst_rtmp_chunk_parse_header2 (GstRtmpChunkHeader * header, GBytes * bytes,
   data = g_bytes_get_data (bytes, &size);
 
   header->format = data[0] >> 6;
-  header->stream_id = data[0] & 0x3f;
+  header->chunk_stream_id = data[0] & 0x3f;
   offset = 1;
-  if (header->stream_id == 0) {
-    header->stream_id = 64 + data[1];
+  if (header->chunk_stream_id == 0) {
+    header->chunk_stream_id = 64 + data[1];
     offset = 2;
-  } else if (header->stream_id == 1) {
-    header->stream_id = 64 + data[1] + (data[2] << 8);
+  } else if (header->chunk_stream_id == 1) {
+    header->chunk_stream_id = 64 + data[1] + (data[2] << 8);
     offset = 3;
   }
   if (header->format == 0) {
@@ -240,7 +240,7 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
   /* FIXME this is incomplete and inefficient */
   chunkdata = g_bytes_get_data (chunk->payload, &chunksize);
   g_assert (chunk->message_length == chunksize);
-  g_assert (chunk->stream_id < 64);
+  g_assert (chunk->chunk_stream_id < 64);
   data = g_malloc (chunksize + 12 + (chunksize / max_chunk_size));
 
   header_fmt = 0;
@@ -251,8 +251,8 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
   }
 #endif
 
-  g_assert (chunk->stream_id < 64);
-  data[0] = (header_fmt << 6) | (chunk->stream_id);
+  g_assert (chunk->chunk_stream_id < 64);
+  data[0] = (header_fmt << 6) | (chunk->chunk_stream_id);
   if (header_fmt == 0) {
     g_assert (chunk->timestamp < 0xffffff);
     data[1] = (chunk->timestamp >> 16) & 0xff;
@@ -281,7 +281,7 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
       chunk->message_type_id == 0x14) {
     for (i = 0; i < chunksize; i += max_chunk_size) {
       if (i != 0) {
-        data[offset] = 0xc0 | chunk->stream_id;
+        data[offset] = 0xc0 | chunk->chunk_stream_id;
         offset++;
       }
       memcpy (data + offset, chunkdata + i, MIN (chunksize - i,
@@ -299,9 +299,10 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
 }
 
 void
-gst_rtmp_chunk_set_stream_id (GstRtmpChunk * chunk, guint32 stream_id)
+gst_rtmp_chunk_set_chunk_stream_id (GstRtmpChunk * chunk,
+    guint32 chunk_stream_id)
 {
-  chunk->stream_id = stream_id;
+  chunk->chunk_stream_id = chunk_stream_id;
 }
 
 void
@@ -320,9 +321,9 @@ gst_rtmp_chunk_set_payload (GstRtmpChunk * chunk, GBytes * payload)
 }
 
 guint32
-gst_rtmp_chunk_get_stream_id (GstRtmpChunk * chunk)
+gst_rtmp_chunk_get_chunk_stream_id (GstRtmpChunk * chunk)
 {
-  return chunk->stream_id;
+  return chunk->chunk_stream_id;
 }
 
 guint32
@@ -353,18 +354,18 @@ gst_rtmp_chunk_cache_free (GstRtmpChunkCache * cache)
 }
 
 GstRtmpChunkCacheEntry *
-gst_rtmp_chunk_cache_get (GstRtmpChunkCache * cache, int stream_id)
+gst_rtmp_chunk_cache_get (GstRtmpChunkCache * cache, int chunk_stream_id)
 {
   int i;
   GstRtmpChunkCacheEntry *entry;
   for (i = 0; i < cache->len; i++) {
     entry = &g_array_index (cache, GstRtmpChunkCacheEntry, i);
-    if (entry->previous_header.stream_id == stream_id)
+    if (entry->previous_header.chunk_stream_id == chunk_stream_id)
       return entry;
   }
   g_array_set_size (cache, cache->len + 1);
   entry = &g_array_index (cache, GstRtmpChunkCacheEntry, cache->len - 1);
-  entry->previous_header.stream_id = stream_id;
+  entry->previous_header.chunk_stream_id = chunk_stream_id;
   return entry;
 }
 

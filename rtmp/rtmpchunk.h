@@ -40,7 +40,7 @@ typedef struct _GstRtmpChunkHeader GstRtmpChunkHeader;
 struct _GstRtmpChunkHeader {
   int format;
   gsize header_size;
-  guint32 stream_id;
+  guint32 chunk_stream_id;
   guint32 timestamp;
   gsize message_length;
   int message_type_id;
@@ -58,7 +58,7 @@ struct _GstRtmpChunk
 {
   GObject object;
 
-  guint32 stream_id;
+  guint32 chunk_stream_id;
   guint32 timestamp;
   gsize message_length;
   int message_type_id;
@@ -89,11 +89,11 @@ GstRtmpChunk * gst_rtmp_chunk_new_parse (GBytes *bytes, gsize *chunk_size,
 GBytes * gst_rtmp_chunk_serialize (GstRtmpChunk *chunk,
     GstRtmpChunkHeader *previous_header, gsize max_chunk_size);
 
-void gst_rtmp_chunk_set_stream_id (GstRtmpChunk *chunk, guint32 stream_id);
+void gst_rtmp_chunk_set_chunk_stream_id (GstRtmpChunk *chunk, guint32 chunk_stream_id);
 void gst_rtmp_chunk_set_timestamp (GstRtmpChunk *chunk, guint32 timestamp);
 void gst_rtmp_chunk_set_payload (GstRtmpChunk *chunk, GBytes *payload);
 
-guint32 gst_rtmp_chunk_get_stream_id (GstRtmpChunk *chunk);
+guint32 gst_rtmp_chunk_get_chunk_stream_id (GstRtmpChunk *chunk);
 guint32 gst_rtmp_chunk_get_timestamp (GstRtmpChunk *chunk);
 GBytes * gst_rtmp_chunk_get_payload (GstRtmpChunk *chunk);
 
@@ -111,7 +111,7 @@ gboolean gst_rtmp_chunk_parse_message (GstRtmpChunk *chunk,
 GstRtmpChunkCache *gst_rtmp_chunk_cache_new (void);
 void gst_rtmp_chunk_cache_free (GstRtmpChunkCache *cache);
 GstRtmpChunkCacheEntry * gst_rtmp_chunk_cache_get (
-    GstRtmpChunkCache *cache, int stream_id);
+    GstRtmpChunkCache *cache, int chunk_stream_id);
 void gst_rtmp_chunk_cache_update (GstRtmpChunkCacheEntry * entry,
     GstRtmpChunk * chunk);
 

@@ -430,9 +430,9 @@ dump_command (GstRtmpChunk * chunk)
 static void
 dump_chunk (GstRtmpChunk * chunk, gboolean dir)
 {
-  g_print ("%s stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
+  g_print ("%s chunk_stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
       " type_id:%-4d info:%08x\n", dir ? ">>>" : "<<<",
-      chunk->stream_id,
+      chunk->chunk_stream_id,
       chunk->timestamp,
       chunk->message_length, chunk->message_type_id, chunk->info);
   if (chunk->message_type_id == 20) {
@@ -454,8 +454,8 @@ got_chunk (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     dump_chunk (chunk, FALSE);
   }
 
-  if ((chunk->stream_id == 7 && chunk->message_type_id == 9) ||
-      (chunk->stream_id == 5 && chunk->message_type_id == 18
+  if ((chunk->chunk_stream_id == 7 && chunk->message_type_id == 9) ||
+      (chunk->chunk_stream_id == 5 && chunk->message_type_id == 18
           && chunk->message_length > 100)) {
     g_object_ref (chunk);
     g_mutex_lock (&rtmp2src->lock);

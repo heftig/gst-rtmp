@@ -470,7 +470,7 @@ gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
 
   chunk = gst_rtmp_chunk_new ();
   chunk->message_type_id = data[0];
-  chunk->stream_id = 4;
+  chunk->chunk_stream_id = 4;
   if (chunk->message_type_id == 18 || chunk->message_type_id == 9) {
   } else {
     GST_ERROR ("unknown message_type_id %d", chunk->message_type_id);
@@ -846,9 +846,9 @@ dump_command (GstRtmpChunk * chunk)
 static void
 dump_chunk (GstRtmpChunk * chunk, gboolean dir)
 {
-  g_print ("%s stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
+  g_print ("%s chunk_stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
       " type_id:%-4d info:%08x\n", dir ? ">>>" : "<<<",
-      chunk->stream_id,
+      chunk->chunk_stream_id,
       chunk->timestamp,
       chunk->message_length, chunk->message_type_id, chunk->info);
   if (chunk->message_type_id == 20) {

@@ -104,7 +104,7 @@ void gst_rtmp_connection_queue_chunk (GstRtmpConnection *connection,
 void gst_rtmp_connection_dump (GstRtmpConnection *connection);
 
 int gst_rtmp_connection_send_command (GstRtmpConnection *connection,
-    int stream_id, const char *command_name, int transaction_id,
+    int chunk_stream_id, const char *command_name, int transaction_id,
     GstAmfNode *command_object, GstAmfNode *optional_args,
     GstRtmpCommandCallback response_command, gpointer user_data);
 int gst_rtmp_connection_send_command2 (GstRtmpConnection *connection,
