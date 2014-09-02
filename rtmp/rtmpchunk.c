@@ -193,14 +193,14 @@ gst_rtmp_chunk_parse_header2 (GstRtmpChunkHeader * header, GBytes * bytes,
     header->message_type_id = data[offset];
     offset += 1;
 
-    header->info = (data[offset + 3] << 24) | (data[offset + 2] << 16) |
+    header->stream_id = (data[offset + 3] << 24) | (data[offset + 2] << 16) |
         (data[offset + 1] << 8) | data[offset];
     offset += 4;
   } else {
     header->timestamp = previous_header->timestamp;
     header->message_length = previous_header->message_length;
     header->message_type_id = previous_header->message_type_id;
-    header->info = previous_header->info;
+    header->stream_id = previous_header->stream_id;
 
     if (header->format == 1) {
       header->timestamp +=
@@ -262,10 +262,10 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
     data[5] = (chunk->message_length >> 8) & 0xff;
     data[6] = chunk->message_length & 0xff;
     data[7] = chunk->message_type_id;
-    data[8] = chunk->info & 0xff;
-    data[9] = (chunk->info >> 8) & 0xff;
-    data[10] = (chunk->info >> 16) & 0xff;
-    data[11] = (chunk->info >> 24) & 0xff;
+    data[8] = chunk->stream_id & 0xff;
+    data[9] = (chunk->stream_id >> 8) & 0xff;
+    data[10] = (chunk->stream_id >> 16) & 0xff;
+    data[11] = (chunk->stream_id >> 24) & 0xff;
     offset = 12;
   } else {
     data[1] = (timestamp >> 16) & 0xff;
@@ -376,7 +376,7 @@ gst_rtmp_chunk_cache_update (GstRtmpChunkCacheEntry * entry,
   entry->previous_header.timestamp = chunk->timestamp;
   entry->previous_header.message_length = chunk->message_length;
   entry->previous_header.message_type_id = chunk->message_type_id;
-  entry->previous_header.info = chunk->info;
+  entry->previous_header.stream_id = chunk->stream_id;
 }
 
 gboolean

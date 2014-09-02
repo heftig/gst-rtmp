@@ -44,7 +44,7 @@ struct _GstRtmpChunkHeader {
   guint32 timestamp;
   gsize message_length;
   int message_type_id;
-  guint32 info;
+  guint32 stream_id;
 };
 
 struct _GstRtmpChunkCacheEntry {
@@ -62,7 +62,7 @@ struct _GstRtmpChunk
   guint32 timestamp;
   gsize message_length;
   int message_type_id;
-  guint32 info;
+  guint32 stream_id;
 
   GBytes *payload;
 };

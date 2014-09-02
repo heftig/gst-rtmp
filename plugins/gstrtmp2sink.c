@@ -477,7 +477,7 @@ gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
   }
   chunk->message_length = GST_READ_UINT24_BE (data + 1);
   chunk->timestamp = GST_READ_UINT24_BE (data + 4);
-  chunk->info = 1;              /* FIXME use actual stream id */
+  chunk->stream_id = 1;         /* FIXME use actual stream id */
 
   if (chunk->message_length != size - 15) {
     GST_ERROR ("message length was %" G_GSIZE_FORMAT " expected %"
@@ -847,10 +847,10 @@ static void
 dump_chunk (GstRtmpChunk * chunk, gboolean dir)
 {
   g_print ("%s chunk_stream_id:%-4d ts:%-8d len:%-6" G_GSIZE_FORMAT
-      " type_id:%-4d info:%08x\n", dir ? ">>>" : "<<<",
+      " type_id:%-4d stream_id:%08x\n", dir ? ">>>" : "<<<",
       chunk->chunk_stream_id,
       chunk->timestamp,
-      chunk->message_length, chunk->message_type_id, chunk->info);
+      chunk->message_length, chunk->message_type_id, chunk->stream_id);
   if (chunk->message_type_id == 20) {
     dump_command (chunk);
   }

@@ -566,7 +566,7 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
       entry->chunk->timestamp = header.timestamp;
       entry->chunk->message_length = header.message_length;
       entry->chunk->message_type_id = header.message_type_id;
-      entry->chunk->info = header.info;
+      entry->chunk->stream_id = header.stream_id;
       entry->payload = g_malloc (header.message_length);
     }
     memcpy (&entry->previous_header, &header, sizeof (header));
@@ -909,7 +909,7 @@ gst_rtmp_connection_send_command (GstRtmpConnection * connection,
   chunk->chunk_stream_id = chunk_stream_id;
   chunk->timestamp = 0;         /* FIXME */
   chunk->message_type_id = 0x14;
-  chunk->info = 0;              /* FIXME */
+  chunk->stream_id = 0;         /* FIXME */
 
   chunk->payload = gst_amf_serialize_command (command_name, transaction_id,
       command_object, optional_args);
@@ -946,7 +946,7 @@ gst_rtmp_connection_send_command2 (GstRtmpConnection * connection,
   chunk->chunk_stream_id = chunk_stream_id;
   chunk->timestamp = 0;         /* FIXME */
   chunk->message_type_id = 0x14;
-  chunk->info = stream_id;
+  chunk->stream_id = stream_id;
 
   chunk->payload = gst_amf_serialize_command2 (command_name, transaction_id,
       command_object, optional_args, n3, n4);
@@ -980,7 +980,7 @@ gst_rtmp_connection_send_ack (GstRtmpConnection * connection)
   chunk->chunk_stream_id = 2;
   chunk->timestamp = 0;
   chunk->message_type_id = 5;
-  chunk->info = 0;
+  chunk->stream_id = 0;
 
   data = g_malloc (4);
   GST_WRITE_UINT32_BE (data, connection->total_input_bytes);
@@ -1003,7 +1003,7 @@ gst_rtmp_connection_send_ping_response (GstRtmpConnection * connection,
   chunk->chunk_stream_id = 2;
   chunk->timestamp = 0;
   chunk->message_type_id = 4;
-  chunk->info = 0;
+  chunk->stream_id = 0;
 
   data = g_malloc (8);
   GST_WRITE_UINT32_BE (data, 7);
@@ -1024,7 +1024,7 @@ gst_rtmp_connection_send_window_size_request (GstRtmpConnection * connection)
   chunk->chunk_stream_id = 2;
   chunk->timestamp = 0;
   chunk->message_type_id = 5;
-  chunk->info = 0;
+  chunk->stream_id = 0;
 
   data = g_malloc (4);
   GST_WRITE_UINT32_BE (data, connection->peer_bandwidth);
