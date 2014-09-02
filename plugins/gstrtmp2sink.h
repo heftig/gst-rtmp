@@ -58,6 +58,7 @@ struct _GstRtmp2Sink
 
   GstRtmpClient *client;
   GstRtmpConnection *connection;
+  gboolean is_connected;
   gboolean dump;
 
 };

@@ -65,6 +65,8 @@ static gboolean gst_rtmp2_sink_unlock (GstBaseSink * sink);
 static gboolean gst_rtmp2_sink_unlock_stop (GstBaseSink * sink);
 static gboolean gst_rtmp2_sink_query (GstBaseSink * sink, GstQuery * query);
 static gboolean gst_rtmp2_sink_event (GstBaseSink * sink, GstEvent * event);
+static GstFlowReturn gst_rtmp2_sink_preroll (GstBaseSink * sink,
+    GstBuffer * buffer);
 static GstFlowReturn gst_rtmp2_sink_render (GstBaseSink * sink,
     GstBuffer * buffer);
 
@@ -88,6 +90,11 @@ static void cmd_connect_done (GstRtmpConnection * connection,
     gpointer user_data);
 static void send_create_stream (GstRtmp2Sink * rtmp2sink);
 static void create_stream_done (GstRtmpConnection * connection,
+    GstRtmpChunk * chunk, const char *command_name, int transaction_id,
+    GstAmfNode * command_object, GstAmfNode * optional_args,
+    gpointer user_data);
+static void send_publish (GstRtmp2Sink * rtmp2sink);
+static void publish_done (GstRtmpConnection * connection,
     GstRtmpChunk * chunk, const char *command_name, int transaction_id,
     GstAmfNode * command_object, GstAmfNode * optional_args,
     gpointer user_data);
@@ -170,6 +177,7 @@ G_DEFINE_TYPE_WITH_CODE (GstRtmp2Sink, gst_rtmp2_sink, GST_TYPE_BASE_SINK,
   if (0)
     base_sink_class->query = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_query);
   base_sink_class->event = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_event);
+  base_sink_class->preroll = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_preroll);
   base_sink_class->render = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_render);
 
   g_object_class_install_property (gobject_class, PROP_LOCATION,
@@ -370,8 +378,8 @@ gst_rtmp2_sink_unlock (GstBaseSink * sink)
 
   GST_DEBUG_OBJECT (rtmp2sink, "unlock");
 
-  rtmp2sink->reset = TRUE;
   g_mutex_lock (&rtmp2sink->lock);
+  rtmp2sink->reset = TRUE;
   g_cond_signal (&rtmp2sink->cond);
   g_mutex_unlock (&rtmp2sink->lock);
 
@@ -419,6 +427,20 @@ gst_rtmp2_sink_event (GstBaseSink * sink, GstEvent * event)
 }
 
 static GstFlowReturn
+gst_rtmp2_sink_preroll (GstBaseSink * sink, GstBuffer * buffer)
+{
+  GstRtmp2Sink *rtmp2sink = GST_RTMP2_SINK (sink);
+
+  g_mutex_lock (&rtmp2sink->lock);
+  while (!rtmp2sink->is_connected) {
+    g_cond_wait (&rtmp2sink->cond, &rtmp2sink->lock);
+  }
+  g_mutex_unlock (&rtmp2sink->lock);
+
+  return GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
 {
   GstRtmp2Sink *rtmp2sink = GST_RTMP2_SINK (sink);
@@ -445,12 +467,11 @@ gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
     return GST_FLOW_ERROR;
   }
 
+
   chunk = gst_rtmp_chunk_new ();
   chunk->message_type_id = data[0];
-  if (chunk->message_type_id == 18) {
-    chunk->stream_id = 5;
-  } else if (chunk->message_type_id == 9) {
-    chunk->stream_id = 7;
+  chunk->stream_id = 4;
+  if (chunk->message_type_id == 18 || chunk->message_type_id == 9) {
   } else {
     GST_ERROR ("unknown message_type_id %d", chunk->message_type_id);
   }
@@ -463,8 +484,26 @@ gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
         G_GSIZE_FORMAT, chunk->message_length, size - 15);
   }
 
-  bytes = g_bytes_new_take (data, size);
-  chunk->payload = g_bytes_new_from_bytes (bytes, 11, size - 15);
+  if (chunk->message_type_id == 18) {
+    static const guint8 header[] = {
+      0x02, 0x00, 0x0d, 0x40, 0x73, 0x65, 0x74, 0x44,
+      0x61, 0x74, 0x61, 0x46, 0x72, 0x61, 0x6d, 0x65
+    };
+    guint8 *newdata;
+    /* FIXME HACK, attach a setDataFrame header.  This should be done
+     * using a command. */
+
+    newdata = g_malloc (size - 15 + sizeof (header));
+    memcpy (newdata, header, sizeof (header));
+    memcpy (newdata + sizeof (header), data + 11, size - 15);
+    g_free (data);
+
+    chunk->message_length += sizeof (header);
+    chunk->payload = g_bytes_new_take (newdata, chunk->message_length);
+  } else {
+    bytes = g_bytes_new_take (data, size);
+    chunk->payload = g_bytes_new_from_bytes (bytes, 11, size - 15);
+  }
 
   if (rtmp2sink->dump) {
     dump_chunk (chunk, TRUE);
@@ -688,11 +727,23 @@ static void
 send_create_stream (GstRtmp2Sink * rtmp2sink)
 {
   GstAmfNode *node;
+  GstAmfNode *node2;
 
   node = gst_amf_node_new (GST_AMF_TYPE_NULL);
-  gst_rtmp_connection_send_command (rtmp2sink->connection, 3, "createStream", 2,
-      node, NULL, create_stream_done, rtmp2sink);
+  node2 = gst_amf_node_new (GST_AMF_TYPE_STRING);
+  gst_amf_node_set_string (node2, rtmp2sink->stream);
+  gst_rtmp_connection_send_command (rtmp2sink->connection, 3, "releaseStream",
+      2, node, node2, NULL, NULL);
 
+  node = gst_amf_node_new (GST_AMF_TYPE_NULL);
+  node2 = gst_amf_node_new (GST_AMF_TYPE_STRING);
+  gst_amf_node_set_string (node2, rtmp2sink->stream);
+  gst_rtmp_connection_send_command (rtmp2sink->connection, 3, "FCPublish", 3,
+      node, node2, NULL, NULL);
+
+  node = gst_amf_node_new (GST_AMF_TYPE_NULL);
+  gst_rtmp_connection_send_command (rtmp2sink->connection, 3, "createStream", 4,
+      node, NULL, create_stream_done, rtmp2sink);
 }
 
 static void
@@ -700,7 +751,7 @@ create_stream_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
     const char *command_name, int transaction_id, GstAmfNode * command_object,
     GstAmfNode * optional_args, gpointer user_data)
 {
-  //GstRtmp2Sink *rtmp2sink = GST_RTMP2_SINK (user_data);
+  GstRtmp2Sink *rtmp2sink = GST_RTMP2_SINK (user_data);
   gboolean ret;
   int stream_id;
 
@@ -711,10 +762,54 @@ create_stream_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   }
 
   if (ret) {
-    GST_DEBUG ("createStream success, stream_id=%d", stream_id);
-    //send_play (rtmp2sink);
+    GST_ERROR ("createStream success, stream_id=%d", stream_id);
+    send_publish (rtmp2sink);
   } else {
     GST_ERROR ("createStream failed");
+  }
+}
+
+static void
+send_publish (GstRtmp2Sink * rtmp2sink)
+{
+  GstAmfNode *node;
+  GstAmfNode *node2;
+  GstAmfNode *node3;
+
+  node = gst_amf_node_new (GST_AMF_TYPE_NULL);
+  node2 = gst_amf_node_new (GST_AMF_TYPE_STRING);
+  gst_amf_node_set_string (node2, rtmp2sink->stream);
+  node3 = gst_amf_node_new (GST_AMF_TYPE_STRING);
+  gst_amf_node_set_string (node3, rtmp2sink->application);
+  gst_rtmp_connection_send_command2 (rtmp2sink->connection, 4, 1, "publish", 5,
+      node, node2, node3, NULL, publish_done, rtmp2sink);
+}
+
+static void
+publish_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
+    const char *command_name, int transaction_id, GstAmfNode * command_object,
+    GstAmfNode * optional_args, gpointer user_data)
+{
+  GstRtmp2Sink *rtmp2sink = GST_RTMP2_SINK (user_data);
+  gboolean ret;
+  int stream_id;
+
+  ret = FALSE;
+  if (optional_args) {
+    stream_id = gst_amf_node_get_number (optional_args);
+    ret = TRUE;
+  }
+
+  if (ret) {
+    GST_ERROR ("publish success, stream_id=%d", stream_id);
+    //send_play (rtmp2sink);
+
+    g_mutex_lock (&rtmp2sink->lock);
+    rtmp2sink->is_connected = TRUE;
+    g_cond_signal (&rtmp2sink->cond);
+    g_mutex_unlock (&rtmp2sink->lock);
+  } else {
+    GST_ERROR ("publish failed");
   }
 }
 

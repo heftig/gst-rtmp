@@ -219,7 +219,7 @@ dump_chunk (GstRtmpChunk * chunk, gboolean dir)
       chunk->stream_id,
       chunk->timestamp,
       chunk->message_length, chunk->message_type_id, chunk->info);
-  if (chunk->message_type_id == 0x14 || chunk->message_type_id == 0x18) {
+  if (chunk->message_type_id == 0x14 || chunk->message_type_id == 0x12) {
     dump_command (chunk);
   }
   gst_rtmp_dump_data (gst_rtmp_chunk_get_payload (chunk));
