@@ -173,29 +173,21 @@ gst_rtmp_chunk_parse_header2 (GstRtmpChunkHeader * header, GBytes * bytes,
     header->chunk_stream_id = 64 + data[1];
     offset = 2;
   } else if (header->chunk_stream_id == 1) {
-    header->chunk_stream_id = 64 + data[1] + (data[2] << 8);
+    header->chunk_stream_id = 64 + GST_READ_UINT16_LE (data + 1);
     offset = 3;
   }
   if (header->format == 0) {
-    header->timestamp =
-        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
-    offset += 3;
-    header->message_length =
-        (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
-    offset += 3;
+    header->timestamp = GST_READ_UINT24_BE (data + offset);
+    header->message_length = GST_READ_UINT24_BE (data + offset + 3);
+    header->message_type_id = data[offset + 6];
+    /* SRSLY:  "Message stream ID is stored in little-endian format." */
+    header->stream_id = GST_READ_UINT32_LE (data + offset + 7);
+    offset += 11;
     if (header->timestamp == 0xffffff) {
-      GST_ERROR ("unimplemented");
-      g_assert_not_reached ();
-      header->timestamp = (data[offset] << 24) | (data[offset + 1] << 16) |
-          (data[offset + 2] << 8) | data[offset + 3];
+      GST_ERROR ("untested long timestamp");
+      header->timestamp = GST_READ_UINT32_BE (data + offset);
       offset += 4;
     }
-    header->message_type_id = data[offset];
-    offset += 1;
-
-    header->stream_id = (data[offset + 3] << 24) | (data[offset + 2] << 16) |
-        (data[offset + 1] << 8) | data[offset];
-    offset += 4;
   } else {
     header->timestamp = previous_header->timestamp;
     header->message_length = previous_header->message_length;
@@ -203,17 +195,12 @@ gst_rtmp_chunk_parse_header2 (GstRtmpChunkHeader * header, GBytes * bytes,
     header->stream_id = previous_header->stream_id;
 
     if (header->format == 1) {
-      header->timestamp +=
-          (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
-      offset += 3;
-      header->message_length =
-          (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
-      offset += 3;
-      header->message_type_id = data[offset];
-      offset += 1;
+      header->timestamp += GST_READ_UINT24_BE (data + offset);
+      header->message_length = GST_READ_UINT24_BE (data + offset + 3);
+      header->message_type_id = data[offset + 6];
+      offset += 7;
     } else if (header->format == 2) {
-      header->timestamp +=
-          (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+      header->timestamp += GST_READ_UINT24_BE (data + offset);
       offset += 3;
     } else {
       /* ok */
@@ -233,16 +220,16 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
   const guint8 *chunkdata;
   gsize chunksize;
   int header_fmt;
-  guint32 timestamp;
+  //guint32 timestamp;
   int offset;
   int i;
 
-  /* FIXME this is incomplete and inefficient */
   chunkdata = g_bytes_get_data (chunk->payload, &chunksize);
   g_assert (chunk->message_length == chunksize);
   g_assert (chunk->chunk_stream_id < 64);
   data = g_malloc (chunksize + 12 + (chunksize / max_chunk_size));
 
+  /* FIXME this is incomplete and inefficient */
   header_fmt = 0;
 #if 0
   if (previous_header->message_length > 0) {
@@ -255,25 +242,15 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
   data[0] = (header_fmt << 6) | (chunk->chunk_stream_id);
   if (header_fmt == 0) {
     g_assert (chunk->timestamp < 0xffffff);
-    data[1] = (chunk->timestamp >> 16) & 0xff;
-    data[2] = (chunk->timestamp >> 8) & 0xff;
-    data[3] = chunk->timestamp & 0xff;
-    data[4] = (chunk->message_length >> 16) & 0xff;
-    data[5] = (chunk->message_length >> 8) & 0xff;
-    data[6] = chunk->message_length & 0xff;
+    GST_WRITE_UINT24_BE (data + 1, chunk->timestamp);
+    GST_WRITE_UINT24_BE (data + 4, chunk->message_length);
     data[7] = chunk->message_type_id;
-    data[8] = chunk->stream_id & 0xff;
-    data[9] = (chunk->stream_id >> 8) & 0xff;
-    data[10] = (chunk->stream_id >> 16) & 0xff;
-    data[11] = (chunk->stream_id >> 24) & 0xff;
+    /* SRSLY:  "Message stream ID is stored in little-endian format." */
+    GST_WRITE_UINT32_LE (data + 8, chunk->stream_id);
     offset = 12;
   } else {
-    data[1] = (timestamp >> 16) & 0xff;
-    data[2] = (timestamp >> 8) & 0xff;
-    data[3] = timestamp & 0xff;
-    data[4] = (chunk->message_length >> 16) & 0xff;
-    data[5] = (chunk->message_length >> 8) & 0xff;
-    data[6] = chunk->message_length & 0xff;
+    GST_WRITE_UINT24_BE (data + 1, chunk->timestamp);
+    GST_WRITE_UINT24_BE (data + 4, chunk->message_length);
     data[7] = chunk->message_type_id;
     offset = 8;
   }

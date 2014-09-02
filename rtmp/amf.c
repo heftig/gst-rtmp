@@ -100,7 +100,7 @@ static int
 _parse_u16 (AmfParser * parser)
 {
   int x;
-  x = (parser->data[parser->offset] << 8) | parser->data[parser->offset + 1];
+  x = GST_READ_UINT16_BE (parser->data + parser->offset);
   parser->offset += 2;
   return x;
 }
@@ -109,9 +109,7 @@ static int
 _parse_u24 (AmfParser * parser)
 {
   int x;
-  x = (parser->data[parser->offset] << 16) |
-      (parser->data[parser->offset + 1] << 8) | parser->data[parser->offset +
-      2];
+  x = GST_READ_UINT24_BE (parser->data + parser->offset);
   parser->offset += 3;
   return x;
 }
@@ -120,10 +118,7 @@ static int
 _parse_u32 (AmfParser * parser)
 {
   int x;
-  x = (parser->data[parser->offset] << 24) |
-      (parser->data[parser->offset + 1] << 16) |
-      (parser->data[parser->offset + 2] << 8) | parser->data[parser->offset +
-      3];
+  x = GST_READ_UINT32_BE (parser->data + parser->offset);
   parser->offset += 4;
   return x;
 }
@@ -428,8 +423,7 @@ static void
 _serialize_u16 (AmfSerializer * serializer, int value)
 {
   if (_serialize_check (serializer, 2)) {
-    serializer->data[serializer->offset] = (value >> 8) & 0xff;
-    serializer->data[serializer->offset + 1] = value & 0xff;
+    GST_WRITE_UINT16_BE (serializer->data + serializer->offset, value);
     serializer->offset += 2;
   }
 }
@@ -439,9 +433,7 @@ static void
 _serialize_u24 (AmfSerializer * serializer, int value)
 {
   if (_serialize_check (serializer, 3)) {
-    serializer->data[serializer->offset] = (value >> 16) & 0xff;
-    serializer->data[serializer->offset + 1] = (value >> 8) & 0xff;
-    serializer->data[serializer->offset + 2] = value & 0xff;
+    GST_WRITE_UINT24_BE (serializer->data + serializer->offset, value);
     serializer->offset += 3;
   }
 }
@@ -451,10 +443,7 @@ static void
 _serialize_u32 (AmfSerializer * serializer, int value)
 {
   if (_serialize_check (serializer, 4)) {
-    serializer->data[serializer->offset] = (value >> 24) & 0xff;
-    serializer->data[serializer->offset + 1] = (value >> 16) & 0xff;
-    serializer->data[serializer->offset + 2] = (value >> 8) & 0xff;
-    serializer->data[serializer->offset + 3] = value & 0xff;
+    GST_WRITE_UINT32_BE (serializer->data + serializer->offset, value);
     serializer->offset += 4;
   }
 }
@@ -480,8 +469,7 @@ _serialize_utf8_string (AmfSerializer * serializer, const char *s)
 
   size = strlen (s);
   if (_serialize_check (serializer, 2 + size)) {
-    serializer->data[serializer->offset] = (size >> 8) & 0xff;
-    serializer->data[serializer->offset + 1] = size & 0xff;
+    GST_WRITE_UINT16_BE (serializer->data + serializer->offset, size);
     memcpy (serializer->data + serializer->offset + 2, s, size);
     serializer->offset += 2 + size;
   }
