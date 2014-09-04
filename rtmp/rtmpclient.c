@@ -172,6 +172,10 @@ gst_rtmp_client_finalize (GObject * object)
   GST_DEBUG_OBJECT (rtmpclient, "finalize");
 
   /* clean up object here */
+  g_free (rtmpclient->server_address);
+  g_free (rtmpclient->stream);
+  g_object_unref (rtmpclient->connection);
+  g_object_unref (rtmpclient->socket_client);
 
   G_OBJECT_CLASS (gst_rtmp_client_parent_class)->finalize (object);
 }
@@ -264,6 +268,8 @@ gst_rtmp_client_connect_done (GObject * source, GAsyncResult * result,
   gst_rtmp_connection_start_handshake (client->connection, FALSE);
 
   g_simple_async_result_complete (client->async);
+  g_object_unref (client->async);
+  client->async = NULL;
 }
 
 #if 0
@@ -297,16 +303,18 @@ gst_rtmp_client_connect_finish (GstRtmpClient * client,
     GAsyncResult * result, GError ** error)
 {
   GSimpleAsyncResult *simple;
+  gboolean ret;
 
   g_return_val_if_fail (g_simple_async_result_is_valid (result,
           G_OBJECT (client), gst_rtmp_client_connect_async), FALSE);
 
   simple = (GSimpleAsyncResult *) result;
 
+  ret = TRUE;
   if (g_simple_async_result_propagate_error (simple, error))
-    return FALSE;
+    ret = FALSE;
 
-  return TRUE;
+  return ret;
 }
 
 GstRtmpConnection *

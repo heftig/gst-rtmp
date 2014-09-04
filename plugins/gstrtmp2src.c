@@ -720,9 +720,7 @@ gst_rtmp2_src_create (GstBaseSrc * src, guint64 offset, guint size,
     rtmp2src->sent_header = TRUE;
     data = g_memdup (header, sizeof (header));
     data[4] = 0x1;              /* |4 with audio */
-    *buf =
-        gst_buffer_new_wrapped (g_memdup (header, sizeof (header)),
-        sizeof (header));
+    *buf = gst_buffer_new_wrapped (data, sizeof (header));
     return GST_FLOW_OK;
   }
 

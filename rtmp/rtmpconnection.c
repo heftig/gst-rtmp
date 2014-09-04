@@ -191,6 +191,8 @@ gst_rtmp_connection_finalize (GObject * object)
   GST_DEBUG_OBJECT (rtmpconnection, "finalize");
 
   /* clean up object here */
+  g_object_unref (rtmpconnection->cancellable);
+  g_queue_free_full (rtmpconnection->output_queue, g_object_unref);
   gst_rtmp_chunk_cache_free (rtmpconnection->input_chunk_cache);
   gst_rtmp_chunk_cache_free (rtmpconnection->output_chunk_cache);
 
