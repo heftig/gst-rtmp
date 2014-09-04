@@ -336,6 +336,11 @@ gst_rtmp2_src_finalize (GObject * object)
   GST_DEBUG_OBJECT (rtmp2src, "finalize");
 
   /* clean up object here */
+  g_free (rtmp2src->uri);
+  g_free (rtmp2src->server_address);
+  g_free (rtmp2src->application);
+  g_free (rtmp2src->stream);
+  g_free (rtmp2src->secure_token);
   g_object_unref (rtmp2src->task);
   g_rec_mutex_clear (&rtmp2src->task_lock);
   g_object_unref (rtmp2src->client);
@@ -449,6 +454,7 @@ send_connect (GstRtmp2Src * rtmp2src)
   // "videoFunction": 1,
   gst_rtmp_connection_send_command (rtmp2src->connection, 3, "connect", 1, node,
       NULL, cmd_connect_done, rtmp2src);
+  gst_amf_node_free (node);
 }
 
 static void
@@ -499,6 +505,7 @@ send_create_stream (GstRtmp2Src * rtmp2src)
   node = gst_amf_node_new (GST_AMF_TYPE_NULL);
   gst_rtmp_connection_send_command (rtmp2src->connection, 3, "createStream", 2,
       node, NULL, create_stream_done, rtmp2src);
+  gst_amf_node_free (node);
 
 }
 
@@ -539,6 +546,9 @@ send_play (GstRtmp2Src * rtmp2src)
   gst_amf_node_set_number (n3, 0);
   gst_rtmp_connection_send_command2 (rtmp2src->connection, 8, 1, "play", 3, n1,
       n2, n3, NULL, play_done, rtmp2src);
+  gst_amf_node_free (n1);
+  gst_amf_node_free (n2);
+  gst_amf_node_free (n3);
 
 }
 
@@ -883,5 +893,7 @@ send_secure_token_response (GstRtmp2Src * rtmp2src, const char *challenge)
 
   gst_rtmp_connection_send_command (rtmp2src->connection, 3,
       "secureTokenResponse", 0, node1, node2, NULL, NULL);
+  gst_amf_node_free (node1);
+  gst_amf_node_free (node2);
 
 }

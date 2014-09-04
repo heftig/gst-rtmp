@@ -118,6 +118,9 @@ gst_rtmp_chunk_finalize (GObject * object)
   GST_DEBUG_OBJECT (rtmpchunk, "finalize");
 
   /* clean up object here */
+  if (rtmpchunk->payload) {
+    g_bytes_unref (rtmpchunk->payload);
+  }
 
   G_OBJECT_CLASS (gst_rtmp_chunk_parent_class)->finalize (object);
 }
@@ -254,22 +257,13 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
     data[7] = chunk->message_type_id;
     offset = 8;
   }
-  /* FIXME this is probably all message types */
-  if (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_DATA ||
-      chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_VIDEO ||
-      chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_COMMAND) {
-    for (i = 0; i < chunksize; i += max_chunk_size) {
-      if (i != 0) {
-        data[offset] = 0xc0 | chunk->chunk_stream_id;
-        offset++;
-      }
-      memcpy (data + offset, chunkdata + i, MIN (chunksize - i,
-              max_chunk_size));
-      offset += MIN (chunksize - i, max_chunk_size);
+  for (i = 0; i < chunksize; i += max_chunk_size) {
+    if (i != 0) {
+      data[offset] = 0xc0 | chunk->chunk_stream_id;
+      offset++;
     }
-  } else {
-    memcpy (data + offset, chunkdata, chunksize);
-    offset += chunksize;
+    memcpy (data + offset, chunkdata + i, MIN (chunksize - i, max_chunk_size));
+    offset += MIN (chunksize - i, max_chunk_size);
   }
   GST_DEBUG ("type: %d in: %" G_GSIZE_FORMAT " out: %d", chunk->message_type_id,
       chunksize, offset);

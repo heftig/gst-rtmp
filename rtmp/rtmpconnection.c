@@ -259,17 +259,20 @@ gst_rtmp_connection_input_ready (GInputStream * is, gpointer user_data)
   if (ret < 0) {
     if (error->code == G_IO_ERROR_TIMED_OUT) {
       /* should retry */
-      GST_ERROR ("timeout, continuing");
+      GST_DEBUG ("timeout, continuing");
+      g_free (data);
       g_error_free (error);
       return G_SOURCE_CONTINUE;
     } else {
       GST_ERROR ("read error: %s %d %s", g_quark_to_string (error->domain),
           error->code, error->message);
     }
+    g_free (data);
     g_error_free (error);
     return G_SOURCE_REMOVE;
   }
   if (ret == 0) {
+    g_free (data);
     gst_rtmp_connection_got_closed (sc);
     return G_SOURCE_REMOVE;
   }
@@ -330,7 +333,6 @@ gst_rtmp_connection_output_ready (GOutputStream * os, gpointer user_data)
     sc->output_bytes =
         gst_rtmp_chunk_serialize (chunk, &entry->previous_header,
         sc->out_chunk_size);
-    g_bytes_ref (sc->output_bytes);
     gst_rtmp_chunk_cache_update (entry, chunk);
   }
 
@@ -547,14 +549,7 @@ gst_rtmp_connection_chunk_callback (GstRtmpConnection * sc)
     }
 
     remaining_bytes = header.message_length - entry->offset;
-    /* FIXME this is probably all message types */
-    if (header.message_type_id == GST_RTMP_MESSAGE_TYPE_DATA ||
-        header.message_type_id == GST_RTMP_MESSAGE_TYPE_VIDEO ||
-        header.message_type_id == GST_RTMP_MESSAGE_TYPE_COMMAND) {
-      chunk_bytes = MIN (remaining_bytes, sc->in_chunk_size);
-    } else {
-      chunk_bytes = remaining_bytes;
-    }
+    chunk_bytes = MIN (remaining_bytes, sc->in_chunk_size);
     data = g_bytes_get_data (sc->input_bytes, &size);
 
     if (header.header_size + chunk_bytes > size) {
@@ -629,12 +624,12 @@ gst_rtmp_connection_handle_chunk (GstRtmpConnection * sc, GstRtmpChunk * chunk)
         sc->command_callbacks = g_list_remove (sc->command_callbacks, cb);
         cb->func (sc, chunk, command_name, transaction_id, command_object,
             optional_args, cb->user_data);
-        g_free (command_name);
-        gst_amf_node_free (command_object);
-        if (optional_args)
-          gst_amf_node_free (optional_args);
         g_free (cb);
       }
+      g_free (command_name);
+      gst_amf_node_free (command_object);
+      if (optional_args)
+        gst_amf_node_free (optional_args);
     }
     GST_DEBUG ("got chunk: %" G_GSIZE_FORMAT " bytes", chunk->message_length);
     g_signal_emit_by_name (sc, "got-chunk", chunk);
@@ -814,6 +809,7 @@ gst_rtmp_connection_client_handshake1 (GstRtmpConnection * sc)
   g_output_stream_write_bytes_async (os, bytes,
       G_PRIORITY_DEFAULT, sc->cancellable,
       gst_rtmp_connection_client_handshake1_done, sc);
+  g_bytes_unref (bytes);
 }
 
 static void
@@ -853,6 +849,7 @@ gst_rtmp_connection_client_handshake2 (GstRtmpConnection * sc)
   os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
   g_output_stream_write_bytes_async (os, out_bytes, G_PRIORITY_DEFAULT,
       sc->cancellable, gst_rtmp_connection_client_handshake2_done, sc);
+  g_bytes_unref (out_bytes);
 }
 
 static void

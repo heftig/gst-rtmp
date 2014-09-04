@@ -313,6 +313,11 @@ gst_rtmp2_sink_finalize (GObject * object)
   GST_DEBUG_OBJECT (rtmp2sink, "finalize");
 
   /* clean up object here */
+  g_free (rtmp2sink->uri);
+  g_free (rtmp2sink->server_address);
+  g_free (rtmp2sink->application);
+  g_free (rtmp2sink->stream);
+  g_free (rtmp2sink->secure_token);
   g_object_unref (rtmp2sink->task);
   g_rec_mutex_clear (&rtmp2sink->task_lock);
   g_object_unref (rtmp2sink->client);
@@ -378,6 +383,10 @@ gst_rtmp2_sink_unlock (GstBaseSink * sink)
 
   g_mutex_lock (&rtmp2sink->lock);
   rtmp2sink->reset = TRUE;
+  gst_task_stop (rtmp2sink->task);
+  if (rtmp2sink->task_main_loop) {
+    g_main_loop_quit (rtmp2sink->task_main_loop);
+  }
   g_cond_signal (&rtmp2sink->cond);
   g_mutex_unlock (&rtmp2sink->lock);
 
@@ -394,10 +403,6 @@ gst_rtmp2_sink_unlock_stop (GstBaseSink * sink)
 
   GST_DEBUG_OBJECT (rtmp2sink, "unlock_stop");
 
-  gst_task_stop (rtmp2sink->task);
-  if (rtmp2sink->task_main_loop) {
-    g_main_loop_quit (rtmp2sink->task_main_loop);
-  }
 
   return TRUE;
 }
@@ -470,6 +475,7 @@ gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
   chunk->message_type_id = data[0];
   chunk->chunk_stream_id = 4;
   if (chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_DATA ||
+      chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_AUDIO ||
       chunk->message_type_id == GST_RTMP_MESSAGE_TYPE_VIDEO) {
   } else {
     GST_ERROR ("unknown message_type_id %d", chunk->message_type_id);
@@ -502,6 +508,7 @@ gst_rtmp2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
   } else {
     bytes = g_bytes_new_take (data, size);
     chunk->payload = g_bytes_new_from_bytes (bytes, 11, size - 15);
+    g_bytes_unref (bytes);
   }
 
   if (rtmp2sink->dump) {
@@ -680,6 +687,7 @@ send_connect (GstRtmp2Sink * rtmp2sink)
   // "videoFunction": 1,
   gst_rtmp_connection_send_command (rtmp2sink->connection, 3, "connect", 1,
       node, NULL, cmd_connect_done, rtmp2sink);
+  gst_amf_node_free (node);
 }
 
 static void
@@ -733,16 +741,21 @@ send_create_stream (GstRtmp2Sink * rtmp2sink)
   gst_amf_node_set_string (node2, rtmp2sink->stream);
   gst_rtmp_connection_send_command (rtmp2sink->connection, 3, "releaseStream",
       2, node, node2, NULL, NULL);
+  gst_amf_node_free (node);
+  gst_amf_node_free (node2);
 
   node = gst_amf_node_new (GST_AMF_TYPE_NULL);
   node2 = gst_amf_node_new (GST_AMF_TYPE_STRING);
   gst_amf_node_set_string (node2, rtmp2sink->stream);
   gst_rtmp_connection_send_command (rtmp2sink->connection, 3, "FCPublish", 3,
       node, node2, NULL, NULL);
+  gst_amf_node_free (node);
+  gst_amf_node_free (node2);
 
   node = gst_amf_node_new (GST_AMF_TYPE_NULL);
   gst_rtmp_connection_send_command (rtmp2sink->connection, 3, "createStream", 4,
       node, NULL, create_stream_done, rtmp2sink);
+  gst_amf_node_free (node);
 }
 
 static void
@@ -782,6 +795,9 @@ send_publish (GstRtmp2Sink * rtmp2sink)
   gst_amf_node_set_string (node3, rtmp2sink->application);
   gst_rtmp_connection_send_command2 (rtmp2sink->connection, 4, 1, "publish", 5,
       node, node2, node3, NULL, publish_done, rtmp2sink);
+  gst_amf_node_free (node);
+  gst_amf_node_free (node2);
+  gst_amf_node_free (node3);
 }
 
 static void
@@ -846,5 +862,7 @@ send_secure_token_response (GstRtmp2Sink * rtmp2sink, const char *challenge)
 
   gst_rtmp_connection_send_command (rtmp2sink->connection, 3,
       "secureTokenResponse", 0, node1, node2, NULL, NULL);
+  gst_amf_node_free (node1);
+  gst_amf_node_free (node2);
 
 }

@@ -236,6 +236,7 @@ gst_rtmp_client_connect_async (GstRtmpClient * client,
   GST_DEBUG ("g_socket_client_connect_async");
   g_socket_client_connect_async (client->socket_client, addr,
       client->cancellable, gst_rtmp_client_connect_done, client);
+  g_object_unref (addr);
 }
 
 static void

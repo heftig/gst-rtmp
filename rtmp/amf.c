@@ -79,7 +79,8 @@ gst_amf_node_free (GstAmfNode * node)
 {
   if (node->type == GST_AMF_TYPE_STRING) {
     g_free (node->string_val);
-  } else if (node->type == GST_AMF_TYPE_OBJECT) {
+  } else if (node->type == GST_AMF_TYPE_OBJECT ||
+      node->type == GST_AMF_TYPE_ECMA_ARRAY) {
     g_ptr_array_foreach (node->array_val, (GFunc) amf_object_field_free, NULL);
     g_ptr_array_free (node->array_val, TRUE);
   }
@@ -174,10 +175,12 @@ _parse_object (AmfParser * parser, GstAmfNode * node)
     s = _parse_utf8_string (parser);
     child_node = _parse_value (parser);
     if (child_node->type == GST_AMF_TYPE_OBJECT_END) {
+      g_free (s);
       gst_amf_node_free (child_node);
       break;
     }
     gst_amf_object_append_take (node, s, child_node);
+    g_free (s);
   }
 }
 
@@ -204,6 +207,7 @@ _parse_ecma_array (AmfParser * parser, GstAmfNode * node)
     s = _parse_utf8_string (parser);
     child_node = _parse_value (parser);
     gst_amf_object_append_take (node, s, child_node);
+    g_free (s);
   }
   _parse_u24 (parser);
 }
