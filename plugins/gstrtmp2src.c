@@ -126,9 +126,7 @@ enum
 #define DEFAULT_PORT 1935
 #define DEFAULT_APPLICATION "live"
 #define DEFAULT_STREAM "myStream"
-//#define DEFAULT_SECURE_TOKEN ""
-/* FIXME for testing only */
-#define DEFAULT_SECURE_TOKEN "4305c027c2758beb"
+#define DEFAULT_SECURE_TOKEN ""
 
 /* pad templates */
 
