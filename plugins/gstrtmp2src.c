@@ -386,6 +386,12 @@ gst_rtmp2_src_task (gpointer user_data)
   g_main_loop_run (main_loop);
   rtmp2src->task_main_loop = NULL;
   g_main_loop_unref (main_loop);
+
+  while (g_main_context_pending (main_context)) {
+    GST_ERROR ("iterating main context to clean up");
+    g_main_context_iteration (main_context, FALSE);
+  }
+
   g_main_context_unref (main_context);
 
   GST_DEBUG ("gst_rtmp2_src_task exiting");
@@ -581,6 +587,12 @@ gst_rtmp2_src_stop (GstBaseSrc * src)
 
   GST_DEBUG_OBJECT (rtmp2src, "stop");
 
+  gst_rtmp_connection_close (rtmp2src->connection);
+
+  gst_task_stop (rtmp2src->task);
+  g_main_loop_quit (rtmp2src->task_main_loop);
+
+  gst_task_join (rtmp2src->task);
 
   return TRUE;
 }
@@ -667,9 +679,6 @@ gst_rtmp2_src_unlock_stop (GstBaseSrc * src)
   GstRtmp2Src *rtmp2src = GST_RTMP2_SRC (src);
 
   GST_DEBUG_OBJECT (rtmp2src, "unlock_stop");
-
-  gst_task_stop (rtmp2src->task);
-  g_main_loop_quit (rtmp2src->task_main_loop);
 
   return TRUE;
 }
