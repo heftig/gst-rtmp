@@ -174,7 +174,8 @@ G_DEFINE_TYPE_WITH_CODE (GstRtmp2Sink, gst_rtmp2_sink, GST_TYPE_BASE_SINK,
   base_sink_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_unlock_stop);
   if (0)
     base_sink_class->query = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_query);
-  base_sink_class->event = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_event);
+  if (0)
+    base_sink_class->event = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_event);
   base_sink_class->preroll = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_preroll);
   base_sink_class->render = GST_DEBUG_FUNCPTR (gst_rtmp2_sink_render);
 
@@ -369,6 +370,13 @@ gst_rtmp2_sink_stop (GstBaseSink * sink)
 
   GST_DEBUG_OBJECT (rtmp2sink, "stop");
 
+  gst_rtmp_connection_close (rtmp2sink->connection);
+
+  gst_task_stop (rtmp2sink->task);
+  g_main_loop_quit (rtmp2sink->task_main_loop);
+
+  gst_task_join (rtmp2sink->task);
+
   return TRUE;
 }
 
@@ -383,10 +391,6 @@ gst_rtmp2_sink_unlock (GstBaseSink * sink)
 
   g_mutex_lock (&rtmp2sink->lock);
   rtmp2sink->reset = TRUE;
-  gst_task_stop (rtmp2sink->task);
-  if (rtmp2sink->task_main_loop) {
-    g_main_loop_quit (rtmp2sink->task_main_loop);
-  }
   g_cond_signal (&rtmp2sink->cond);
   g_mutex_unlock (&rtmp2sink->lock);
 
@@ -629,7 +633,7 @@ gst_rtmp2_sink_task (gpointer user_data)
   GMainLoop *main_loop;
   GMainContext *main_context;
 
-  GST_ERROR ("gst_rtmp2_sink_task starting");
+  GST_DEBUG ("gst_rtmp2_sink_task starting");
 
   gst_rtmp_client_set_server_address (rtmp2sink->client,
       rtmp2sink->server_address);
@@ -642,9 +646,15 @@ gst_rtmp2_sink_task (gpointer user_data)
   g_main_loop_run (main_loop);
   rtmp2sink->task_main_loop = NULL;
   g_main_loop_unref (main_loop);
+
+  while (g_main_context_pending (main_context)) {
+    GST_ERROR ("iterating main context to clean up");
+    g_main_context_iteration (main_context, FALSE);
+  }
+
   g_main_context_unref (main_context);
 
-  GST_ERROR ("gst_rtmp2_sink_task exiting");
+  GST_DEBUG ("gst_rtmp2_sink_task exiting");
 }
 
 static void
@@ -774,7 +784,7 @@ create_stream_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   }
 
   if (ret) {
-    GST_ERROR ("createStream success, stream_id=%d", stream_id);
+    GST_DEBUG ("createStream success, stream_id=%d", stream_id);
     send_publish (rtmp2sink);
   } else {
     GST_ERROR ("createStream failed");
@@ -816,8 +826,7 @@ publish_done (GstRtmpConnection * connection, GstRtmpChunk * chunk,
   }
 
   if (ret) {
-    GST_ERROR ("publish success, stream_id=%d", stream_id);
-    //send_play (rtmp2sink);
+    GST_DEBUG ("publish success, stream_id=%d", stream_id);
 
     g_mutex_lock (&rtmp2sink->lock);
     rtmp2sink->is_connected = TRUE;

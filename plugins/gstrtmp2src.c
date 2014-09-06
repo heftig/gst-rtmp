@@ -664,8 +664,8 @@ gst_rtmp2_src_unlock (GstBaseSrc * src)
 
   GST_DEBUG_OBJECT (rtmp2src, "unlock");
 
-  rtmp2src->reset = TRUE;
   g_mutex_lock (&rtmp2src->lock);
+  rtmp2src->reset = TRUE;
   g_cond_signal (&rtmp2src->cond);
   g_mutex_unlock (&rtmp2src->lock);
 
