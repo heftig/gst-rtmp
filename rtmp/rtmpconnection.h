@@ -50,7 +50,6 @@ struct _GstRtmpConnection
 
   /* private */
   GSocketConnection *connection;
-  GSocketConnection *proxy_connection;
   GCancellable *cancellable;
   int state;
   GSocketClient *socket_client;
@@ -59,6 +58,7 @@ struct _GstRtmpConnection
   gboolean writing;
 
   GSource *input_source;
+  GSource *output_source;
   GBytes *input_bytes;
   gsize input_needed_bytes;
   GstRtmpConnectionCallback input_callback;
@@ -96,6 +96,7 @@ GType gst_rtmp_connection_get_type (void);
 GstRtmpConnection *gst_rtmp_connection_new (void);
 void gst_rtmp_connection_set_socket_connection (
     GstRtmpConnection *rtmpconnection, GSocketConnection *connection);
+void gst_rtmp_connection_close (GstRtmpConnection *connection);
 
 void gst_rtmp_connection_start_handshake (GstRtmpConnection *connection,
     gboolean is_server);

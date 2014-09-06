@@ -187,11 +187,28 @@ void
 gst_rtmp_connection_finalize (GObject * object)
 {
   GstRtmpConnection *rtmpconnection = GST_RTMP_CONNECTION (object);
+  GSocket *sock;
 
   GST_DEBUG_OBJECT (rtmpconnection, "finalize");
 
   /* clean up object here */
+
+  gst_rtmp_connection_close (rtmpconnection);
+
+  g_cancellable_cancel (rtmpconnection->cancellable);
   g_object_unref (rtmpconnection->cancellable);
+
+  sock = g_socket_connection_get_socket (rtmpconnection->connection);
+  g_object_ref (sock);
+  g_object_unref (rtmpconnection->connection);
+  /* FIXME force destruction of the GSocket */
+  if (GST_OBJECT_REFCOUNT (sock) > 1) {
+    GST_ERROR ("hacking unref of socket (refcount=%d)",
+        GST_OBJECT_REFCOUNT (sock));
+    g_object_unref (sock);
+  }
+  g_object_unref (sock);
+
   g_queue_free_full (rtmpconnection->output_queue, g_object_unref);
   gst_rtmp_chunk_cache_free (rtmpconnection->input_chunk_cache);
   gst_rtmp_chunk_cache_free (rtmpconnection->output_chunk_cache);
@@ -215,9 +232,11 @@ gst_rtmp_connection_set_socket_connection (GstRtmpConnection * sc,
 {
   GInputStream *is;
 
-  sc->connection = g_object_ref (connection);
+  sc->connection = connection;
 
+  /* refs the socket because it's creating an input stream, which holds a ref */
   is = g_io_stream_get_input_stream (G_IO_STREAM (sc->connection));
+  /* refs the socket because it's creating a socket source */
   sc->input_source =
       g_pollable_input_stream_create_source (G_POLLABLE_INPUT_STREAM (is),
       sc->cancellable);
@@ -226,22 +245,40 @@ gst_rtmp_connection_set_socket_connection (GstRtmpConnection * sc,
   g_source_attach (sc->input_source, NULL);
 }
 
+void
+gst_rtmp_connection_close (GstRtmpConnection * connection)
+{
+
+  g_cancellable_cancel (connection->cancellable);
+
+  if (connection->input_source) {
+    g_source_destroy (connection->input_source);
+    g_source_unref (connection->input_source);
+    connection->input_source = NULL;
+  }
+  if (connection->output_source) {
+    g_source_destroy (connection->output_source);
+    g_source_unref (connection->output_source);
+    connection->output_source = NULL;
+  }
+
+}
+
 static void
 gst_rtmp_connection_start_output (GstRtmpConnection * sc)
 {
-  GSource *source;
   GOutputStream *os;
 
   if (!sc->handshake_complete)
     return;
 
   os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
-  source =
+  sc->output_source =
       g_pollable_output_stream_create_source (G_POLLABLE_OUTPUT_STREAM (os),
       sc->cancellable);
-  g_source_set_callback (source, (GSourceFunc) gst_rtmp_connection_output_ready,
-      sc, NULL);
-  g_source_attach (source, NULL);
+  g_source_set_callback (sc->output_source,
+      (GSourceFunc) gst_rtmp_connection_output_ready, sc, NULL);
+  g_source_attach (sc->output_source, NULL);
 }
 
 static gboolean
