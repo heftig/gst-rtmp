@@ -175,7 +175,6 @@ gst_rtmp_client_finalize (GObject * object)
   g_free (rtmpclient->server_address);
   g_free (rtmpclient->stream);
   g_object_unref (rtmpclient->connection);
-  g_object_unref (rtmpclient->socket_client);
 
   G_OBJECT_CLASS (gst_rtmp_client_parent_class)->finalize (object);
 }
@@ -216,6 +215,7 @@ gst_rtmp_client_connect_async (GstRtmpClient * client,
     GCancellable * cancellable, GAsyncReadyCallback callback,
     gpointer user_data)
 {
+  GSocketClient *socket_client;
   GSimpleAsyncResult *async;
   GSocketConnectable *addr;
 
@@ -234,11 +234,11 @@ gst_rtmp_client_connect_async (GstRtmpClient * client,
   client->async = async;
 
   addr = g_network_address_new (client->server_address, client->server_port);
-  client->socket_client = g_socket_client_new ();
-  g_socket_client_set_timeout (client->socket_client, client->timeout);
+  socket_client = g_socket_client_new ();
+  g_socket_client_set_timeout (socket_client, client->timeout);
 
   GST_DEBUG ("g_socket_client_connect_async");
-  g_socket_client_connect_async (client->socket_client, addr,
+  g_socket_client_connect_async (socket_client, addr,
       client->cancellable, gst_rtmp_client_connect_done, client);
   g_object_unref (addr);
 }
@@ -247,12 +247,14 @@ static void
 gst_rtmp_client_connect_done (GObject * source, GAsyncResult * result,
     gpointer user_data)
 {
+  GSocketClient *socket_client = G_SOCKET_CLIENT (source);
   GstRtmpClient *client = GST_RTMP_CLIENT (user_data);
   GError *error = NULL;
 
   GST_DEBUG ("g_socket_client_connect_done");
   client->socket_connection =
-      g_socket_client_connect_finish (client->socket_client, result, &error);
+      g_socket_client_connect_finish (socket_client, result, &error);
+  g_object_unref (socket_client);
   if (client->socket_connection == NULL) {
     GST_ERROR ("error");
     g_simple_async_result_set_error (client->async, GST_RTMP_ERROR,

@@ -71,7 +71,6 @@ struct _GstRtmpClient
 
   GCancellable *cancellable;
   GSimpleAsyncResult *async;
-  GSocketClient *socket_client;
   GSocketConnection *socket_connection;
 
   GstRtmpConnection *connection;
