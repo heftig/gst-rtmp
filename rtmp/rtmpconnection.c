@@ -343,6 +343,8 @@ gst_rtmp_connection_output_ready (GOutputStream * os, gpointer user_data)
 {
   GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_data);
   GstRtmpChunk *chunk;
+  const guint8 *data;
+  gsize size;
 
   GST_DEBUG ("output ready");
 
@@ -370,7 +372,8 @@ gst_rtmp_connection_output_ready (GOutputStream * os, gpointer user_data)
   }
 
   os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
-  g_output_stream_write_bytes_async (os, sc->output_bytes, G_PRIORITY_DEFAULT,
+  data = g_bytes_get_data (sc->output_bytes, &size);
+  g_output_stream_write_async (os, data, size, G_PRIORITY_DEFAULT,
       sc->cancellable, gst_rtmp_connection_write_chunk_done, sc);
   sc->writing = TRUE;
 
@@ -398,14 +401,14 @@ gst_rtmp_connection_write_chunk_done (GObject * obj,
 
   connection->writing = FALSE;
 
-  ret = g_output_stream_write_bytes_finish (os, res, &error);
+  ret = g_output_stream_write_finish (os, res, &error);
   if (ret < 0) {
     GST_DEBUG ("write error: %s", error->message);
     gst_rtmp_connection_got_closed (connection);
     g_error_free (error);
     return;
   }
-  if (ret < (gssize)g_bytes_get_size (connection->output_bytes)) {
+  if (ret < (gssize) g_bytes_get_size (connection->output_bytes)) {
     GST_DEBUG ("short write %" G_GSIZE_FORMAT " < %" G_GSIZE_FORMAT,
         ret, g_bytes_get_size (connection->output_bytes));
 
@@ -506,7 +509,7 @@ gst_rtmp_connection_server_handshake1_done (GObject * obj,
 
   GST_DEBUG ("gst_rtmp_connection_server_handshake2_done");
 
-  ret = g_output_stream_write_bytes_finish (os, res, &error);
+  ret = g_output_stream_write_finish (os, res, &error);
   if (ret < 1 + 1536 + 1536) {
     GST_ERROR ("read error: %s", error->message);
     g_error_free (error);
@@ -841,7 +844,8 @@ gst_rtmp_connection_client_handshake1 (GstRtmpConnection * sc)
   memset (data + 9, 0xa5, 1528);
   bytes = g_bytes_new_take (data, 1 + 1536);
 
-  g_output_stream_write_bytes_async (os, bytes,
+  sc->output_bytes = bytes;
+  g_output_stream_write_async (os, data, 1 + 1536,
       G_PRIORITY_DEFAULT, sc->cancellable,
       gst_rtmp_connection_client_handshake1_done, sc);
   g_bytes_unref (bytes);
@@ -858,13 +862,16 @@ gst_rtmp_connection_client_handshake1_done (GObject * obj,
 
   GST_DEBUG ("gst_rtmp_connection_client_handshake1_done");
 
-  ret = g_output_stream_write_bytes_finish (os, res, &error);
+  ret = g_output_stream_write_finish (os, res, &error);
   if (ret < 1 + 1536) {
     GST_ERROR ("write error: %s", error->message);
     g_error_free (error);
     return;
   }
   GST_DEBUG ("wrote %" G_GSSIZE_FORMAT " bytes", ret);
+
+  g_bytes_unref (sc->output_bytes);
+  sc->output_bytes = NULL;
 
   gst_rtmp_connection_set_input_callback (sc,
       gst_rtmp_connection_client_handshake2, 1 + 1536 + 1536);
@@ -876,13 +883,17 @@ gst_rtmp_connection_client_handshake2 (GstRtmpConnection * sc)
   GBytes *bytes;
   GBytes *out_bytes;
   GOutputStream *os;
+  const guint8 *data;
+  gsize size;
 
   bytes = gst_rtmp_connection_take_input_bytes (sc, 1 + 1536 + 1536);
   out_bytes = g_bytes_new_from_bytes (bytes, 1 + 1536, 1536);
   g_bytes_unref (bytes);
 
+  sc->output_bytes = bytes;
+  data = g_bytes_get_data (bytes, &size);
   os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
-  g_output_stream_write_bytes_async (os, out_bytes, G_PRIORITY_DEFAULT,
+  g_output_stream_write_async (os, data, size, G_PRIORITY_DEFAULT,
       sc->cancellable, gst_rtmp_connection_client_handshake2_done, sc);
   g_bytes_unref (out_bytes);
 }
@@ -898,7 +909,7 @@ gst_rtmp_connection_client_handshake2_done (GObject * obj,
 
   GST_DEBUG ("gst_rtmp_connection_client_handshake2_done");
 
-  ret = g_output_stream_write_bytes_finish (os, res, &error);
+  ret = g_output_stream_write_finish (os, res, &error);
   if (ret < 1536) {
     GST_ERROR ("write error: %s", error->message);
     g_error_free (error);
