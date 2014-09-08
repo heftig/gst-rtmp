@@ -850,7 +850,6 @@ gst_rtmp_connection_client_handshake1 (GstRtmpConnection * sc)
   g_output_stream_write_async (os, data, 1 + 1536,
       G_PRIORITY_DEFAULT, sc->cancellable,
       gst_rtmp_connection_client_handshake1_done, sc);
-  g_bytes_unref (bytes);
 }
 
 static void
@@ -892,12 +891,11 @@ gst_rtmp_connection_client_handshake2 (GstRtmpConnection * sc)
   out_bytes = g_bytes_new_from_bytes (bytes, 1 + 1536, 1536);
   g_bytes_unref (bytes);
 
-  sc->output_bytes = bytes;
-  data = g_bytes_get_data (bytes, &size);
+  sc->output_bytes = out_bytes;
+  data = g_bytes_get_data (out_bytes, &size);
   os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
   g_output_stream_write_async (os, data, size, G_PRIORITY_DEFAULT,
       sc->cancellable, gst_rtmp_connection_client_handshake2_done, sc);
-  g_bytes_unref (out_bytes);
 }
 
 static void
@@ -918,6 +916,9 @@ gst_rtmp_connection_client_handshake2_done (GObject * obj,
     return;
   }
   GST_DEBUG ("wrote %" G_GSSIZE_FORMAT " bytes", ret);
+
+  g_bytes_unref (sc->output_bytes);
+  sc->output_bytes = NULL;
 
   /* handshake finished */
   GST_INFO ("client handshake finished");
