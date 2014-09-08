@@ -228,6 +228,11 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
   int i;
 
   chunkdata = g_bytes_get_data (chunk->payload, &chunksize);
+  if (chunk->message_length != chunksize) {
+    GST_ERROR ("message_length wrong (%" G_GSIZE_FORMAT " should be %"
+        G_GSIZE_FORMAT ")", chunk->message_length, chunksize);
+  }
+
   g_assert (chunk->message_length == chunksize);
   g_assert (chunk->chunk_stream_id < 64);
   data = g_malloc (chunksize + 12 + (chunksize / max_chunk_size));
