@@ -190,18 +190,20 @@ gst_rtmp_connection_finalize (GObject * object)
   gst_rtmp_connection_close (rtmpconnection);
 
   g_cancellable_cancel (rtmpconnection->cancellable);
-  g_object_unref (rtmpconnection->cancellable);
+  g_clear_object (&rtmpconnection->cancellable);
 
-  sock = g_socket_connection_get_socket (rtmpconnection->connection);
-  g_object_ref (sock);
-  g_object_unref (rtmpconnection->connection);
-  /* FIXME force destruction of the GSocket */
-  if (GST_OBJECT_REFCOUNT (sock) > 1) {
-    GST_ERROR ("hacking unref of socket (refcount=%d)",
-        GST_OBJECT_REFCOUNT (sock));
+  if (rtmpconnection->connection) {
+    sock = g_socket_connection_get_socket (rtmpconnection->connection);
+    g_object_ref (sock);
+    g_clear_object (&rtmpconnection->connection);
+    /* FIXME force destruction of the GSocket */
+    if (GST_OBJECT_REFCOUNT (sock) > 1) {
+      GST_ERROR ("hacking unref of socket (refcount=%d)",
+          GST_OBJECT_REFCOUNT (sock));
+      g_object_unref (sock);
+    }
     g_object_unref (sock);
   }
-  g_object_unref (sock);
 
   g_queue_free_full (rtmpconnection->output_queue, g_object_unref);
   gst_rtmp_chunk_cache_free (rtmpconnection->input_chunk_cache);

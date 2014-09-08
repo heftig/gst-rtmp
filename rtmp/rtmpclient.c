@@ -174,7 +174,7 @@ gst_rtmp_client_finalize (GObject * object)
   /* clean up object here */
   g_free (rtmpclient->server_address);
   g_free (rtmpclient->stream);
-  g_object_unref (rtmpclient->connection);
+  g_clear_object (&rtmpclient->connection);
 
   G_OBJECT_CLASS (gst_rtmp_client_parent_class)->finalize (object);
 }
