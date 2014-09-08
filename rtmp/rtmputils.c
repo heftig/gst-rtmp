@@ -36,17 +36,17 @@ gst_rtmp_dump_data (GBytes * bytes)
   int i, j;
 
   data = g_bytes_get_data (bytes, &size);
-  for (i = 0; i < size; i += 16) {
+  for (i = 0; i < (int)size; i += 16) {
     g_print ("%04x: ", i);
     for (j = 0; j < 16; j++) {
-      if (i + j < size) {
+      if (i + j < (int)size) {
         g_print ("%02x ", data[i + j]);
       } else {
         g_print ("   ");
       }
     }
     for (j = 0; j < 16; j++) {
-      if (i + j < size) {
+      if (i + j < (int)size) {
         g_print ("%c", g_ascii_isprint (data[i + j]) ? data[i + j] : '.');
       }
     }
@@ -92,7 +92,7 @@ gst_rtmp_hexify (const guint8 * src, gsize size)
   int i;
   gchar *dest;
   dest = g_malloc (2 * size + 1);
-  for (i = 0; i < size; i++) {
+  for (i = 0; i < (int)size; i++) {
     dest[2 * i] = xdigit[src[i] >> 4];
     dest[2 * i + 1] = xdigit[src[i] & 0xf];
   }
@@ -192,7 +192,7 @@ dump_command (GstRtmpChunk * chunk)
 
   offset = 0;
   data = g_bytes_get_data (chunk->payload, &size);
-  while (offset < size) {
+  while (offset < (int)size) {
     amf = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
     gst_amf_node_dump (amf);
     gst_amf_node_free (amf);

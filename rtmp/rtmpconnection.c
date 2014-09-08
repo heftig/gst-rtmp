@@ -45,23 +45,18 @@ static gboolean gst_rtmp_connection_input_ready (GInputStream * is,
     gpointer user_data);
 static gboolean gst_rtmp_connection_output_ready (GOutputStream * os,
     gpointer user_data);
-static void gst_rtmp_connection_client_handshake1_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
-static void gst_rtmp_connection_client_handshake2 (GstRtmpConnection * sc);
-static void gst_rtmp_connection_client_handshake2_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
 static void gst_rtmp_connection_client_handshake1 (GstRtmpConnection * sc);
 static void gst_rtmp_connection_client_handshake1_done (GObject * obj,
     GAsyncResult * res, gpointer user_data);
 static void gst_rtmp_connection_client_handshake2 (GstRtmpConnection * sc);
 static void gst_rtmp_connection_client_handshake2_done (GObject * obj,
     GAsyncResult * res, gpointer user_data);
-static void gst_rtmp_connection_write_chunk_done (GObject * obj,
-    GAsyncResult * res, gpointer user_data);
 static void gst_rtmp_connection_server_handshake1 (GstRtmpConnection * sc);
 static void gst_rtmp_connection_server_handshake1_done (GObject * obj,
     GAsyncResult * res, gpointer user_data);
 static void gst_rtmp_connection_server_handshake2 (GstRtmpConnection * sc);
+static void gst_rtmp_connection_write_chunk_done (GObject * obj,
+    GAsyncResult * res, gpointer user_data);
 static void
 gst_rtmp_connection_set_input_callback (GstRtmpConnection * connection,
     void (*input_callback) (GstRtmpConnection * connection),
@@ -77,7 +72,6 @@ gst_rtmp_connection_handle_user_control (GstRtmpConnection * connectin,
 static void gst_rtmp_connection_handle_chunk (GstRtmpConnection * sc,
     GstRtmpChunk * chunk);
 
-static void gst_rtmp_connection_server_handshake1 (GstRtmpConnection * sc);
 static void gst_rtmp_connection_send_ack (GstRtmpConnection * connection);
 static void
 gst_rtmp_connection_send_ping_response (GstRtmpConnection * connection,
@@ -88,7 +82,7 @@ static void gst_rtmp_connection_send_window_size_request (GstRtmpConnection *
 typedef struct _CommandCallback CommandCallback;
 struct _CommandCallback
 {
-  int chunk_stream_id;
+  guint32 chunk_stream_id;
   int transaction_id;
   GstRtmpCommandCallback func;
   gpointer user_data;
@@ -411,7 +405,7 @@ gst_rtmp_connection_write_chunk_done (GObject * obj,
     g_error_free (error);
     return;
   }
-  if (ret < g_bytes_get_size (connection->output_bytes)) {
+  if (ret < (gssize)g_bytes_get_size (connection->output_bytes)) {
     GST_DEBUG ("short write %" G_GSIZE_FORMAT " < %" G_GSIZE_FORMAT,
         ret, g_bytes_get_size (connection->output_bytes));
 
@@ -809,7 +803,8 @@ gst_rtmp_connection_start_handshake (GstRtmpConnection * connection,
   }
 }
 
-void
+#if 0
+static void
 gst_rtmp_connection_handshake_async (GstRtmpConnection * connection,
     gboolean is_server, GCancellable * cancellable,
     GAsyncReadyCallback callback, gpointer user_data)
@@ -829,6 +824,7 @@ gst_rtmp_connection_handshake_async (GstRtmpConnection * connection,
     gst_rtmp_connection_client_handshake1 (connection);
   }
 }
+#endif
 
 static void
 gst_rtmp_connection_client_handshake1 (GstRtmpConnection * sc)

@@ -151,7 +151,7 @@ _parse_number (AmfParser * parser)
 static char *
 _parse_utf8_string (AmfParser * parser)
 {
-  int size;
+  gsize size;
   char *s;
 
   size = _parse_u16 (parser);
@@ -376,7 +376,7 @@ _gst_amf_node_dump (GstAmfNode * node, int indent)
     case GST_AMF_TYPE_OBJECT:
     case GST_AMF_TYPE_ECMA_ARRAY:
       g_print ("{\n");
-      for (i = 0; i < node->array_val->len; i++) {
+      for (i = 0; i < (int)node->array_val->len; i++) {
         AmfObjectField *field = g_ptr_array_index (node->array_val, i);
         g_print ("%*.*s  \"%s\": ", indent, indent, "", field->name);
         _gst_amf_node_dump (field->value, indent + 2);
@@ -406,7 +406,7 @@ gst_amf_node_dump (GstAmfNode * node)
 }
 
 static gboolean
-_serialize_check (AmfSerializer * serializer, int value)
+_serialize_check (AmfSerializer * serializer, gsize value)
 {
   if (serializer->offset + value > serializer->size) {
     serializer->error = TRUE;
@@ -484,7 +484,7 @@ _serialize_object (AmfSerializer * serializer, GstAmfNode * node)
 {
   int i;
 
-  for (i = 0; i < node->array_val->len; i++) {
+  for (i = 0; i < (int)node->array_val->len; i++) {
     AmfObjectField *field = g_ptr_array_index (node->array_val, i);
     _serialize_utf8_string (serializer, field->name);
     _serialize_value (serializer, field->value);
@@ -499,7 +499,7 @@ _serialize_ecma_array (AmfSerializer * serializer, GstAmfNode * node)
   int i;
 
   _serialize_u32 (serializer, 0);
-  for (i = 0; i < node->array_val->len; i++) {
+  for (i = 0; i < (int)node->array_val->len; i++) {
     AmfObjectField *field = g_ptr_array_index (node->array_val, i);
     _serialize_utf8_string (serializer, field->name);
     _serialize_value (serializer, field->value);
@@ -620,7 +620,7 @@ const GstAmfNode *
 gst_amf_node_get_object (const GstAmfNode * node, const char *field_name)
 {
   int i;
-  for (i = 0; i < node->array_val->len; i++) {
+  for (i = 0; i < (int)node->array_val->len; i++) {
     AmfObjectField *field = g_ptr_array_index (node->array_val, i);
     if (strcmp (field->name, field_name) == 0) {
       return field->value;

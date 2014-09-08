@@ -145,7 +145,7 @@ gboolean gst_rtmp_chunk_parse_message (GstRtmpChunk *chunk,
 GstRtmpChunkCache *gst_rtmp_chunk_cache_new (void);
 void gst_rtmp_chunk_cache_free (GstRtmpChunkCache *cache);
 GstRtmpChunkCacheEntry * gst_rtmp_chunk_cache_get (
-    GstRtmpChunkCache *cache, int chunk_stream_id);
+    GstRtmpChunkCache *cache, guint32 chunk_stream_id);
 void gst_rtmp_chunk_cache_update (GstRtmpChunkCacheEntry * entry,
     GstRtmpChunk * chunk);
 

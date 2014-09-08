@@ -257,7 +257,7 @@ gst_rtmp_chunk_serialize (GstRtmpChunk * chunk,
     data[7] = chunk->message_type_id;
     offset = 8;
   }
-  for (i = 0; i < chunksize; i += max_chunk_size) {
+  for (i = 0; i < (int)chunksize; i += max_chunk_size) {
     if (i != 0) {
       data[offset] = 0xc0 | chunk->chunk_stream_id;
       offset++;
@@ -327,11 +327,11 @@ gst_rtmp_chunk_cache_free (GstRtmpChunkCache * cache)
 }
 
 GstRtmpChunkCacheEntry *
-gst_rtmp_chunk_cache_get (GstRtmpChunkCache * cache, int chunk_stream_id)
+gst_rtmp_chunk_cache_get (GstRtmpChunkCache * cache, guint32 chunk_stream_id)
 {
   int i;
   GstRtmpChunkCacheEntry *entry;
-  for (i = 0; i < cache->len; i++) {
+  for (i = 0; i < (int)cache->len; i++) {
     entry = &g_array_index (cache, GstRtmpChunkCacheEntry, i);
     if (entry->previous_header.chunk_stream_id == chunk_stream_id)
       return entry;
@@ -371,7 +371,7 @@ gst_rtmp_chunk_parse_message (GstRtmpChunk * chunk, char **command_name,
   offset += n_parsed;
   n3 = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
   offset += n_parsed;
-  if (offset < size) {
+  if (offset < (int)size) {
     n4 = gst_amf_node_new_parse (data + offset, size - offset, &n_parsed);
   } else {
     n4 = NULL;

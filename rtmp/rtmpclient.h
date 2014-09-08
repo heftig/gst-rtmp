@@ -92,6 +92,7 @@ GstRtmpClient *gst_rtmp_client_new (void);
 void gst_rtmp_client_set_url (GstRtmpClient *client, const char *url);
 void gst_rtmp_client_set_server_address (GstRtmpClient * client, const char *host);
 void gst_rtmp_client_set_server_port (GstRtmpClient * client, int port);
+void gst_rtmp_client_set_stream (GstRtmpClient * client, const char *stream);
 
 void gst_rtmp_client_connect_async (GstRtmpClient *client,
     GCancellable *cancellable, GAsyncReadyCallback callback,
