@@ -268,6 +268,9 @@ gst_rtmp_connection_start_output (GstRtmpConnection * sc)
   if (!sc->handshake_complete)
     return;
 
+  if (sc->output_source)
+    return;
+
   os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
   sc->output_source =
       g_pollable_output_stream_create_source (G_POLLABLE_OUTPUT_STREAM (os),
