@@ -228,6 +228,7 @@ gst_rtmp_connection_set_socket_connection (GstRtmpConnection * sc,
 {
   GInputStream *is;
 
+  sc->thread = g_thread_self();
   sc->connection = connection;
 
   /* refs the socket because it's creating an input stream, which holds a ref */
@@ -244,6 +245,9 @@ gst_rtmp_connection_set_socket_connection (GstRtmpConnection * sc,
 void
 gst_rtmp_connection_close (GstRtmpConnection * connection)
 {
+  if (connection->thread != g_thread_self()) {
+    GST_ERROR("Called from wrong thread");
+  }
 
   g_cancellable_cancel (connection->cancellable);
 
@@ -769,6 +773,9 @@ gst_rtmp_connection_queue_chunk (GstRtmpConnection * connection,
   g_return_if_fail (GST_IS_RTMP_CONNECTION (connection));
   g_return_if_fail (GST_IS_RTMP_CHUNK (chunk));
 
+  if (connection->thread != g_thread_self()) {
+    GST_ERROR("Called from wrong thread");
+  }
   g_queue_push_tail (connection->output_queue, chunk);
   gst_rtmp_connection_start_output (connection);
 }
@@ -803,6 +810,9 @@ void
 gst_rtmp_connection_start_handshake (GstRtmpConnection * connection,
     gboolean is_server)
 {
+  if (connection->thread != g_thread_self()) {
+    GST_ERROR("Called from wrong thread");
+  }
   if (is_server) {
     gst_rtmp_connection_set_input_callback (connection,
         gst_rtmp_connection_server_handshake1, 1537);
@@ -957,6 +967,9 @@ gst_rtmp_connection_send_command (GstRtmpConnection * connection,
 {
   GstRtmpChunk *chunk;
 
+  if (connection->thread != g_thread_self()) {
+    GST_ERROR("Called from wrong thread");
+  }
   chunk = gst_rtmp_chunk_new ();
   chunk->chunk_stream_id = chunk_stream_id;
   chunk->timestamp = 0;         /* FIXME */
@@ -994,6 +1007,9 @@ gst_rtmp_connection_send_command2 (GstRtmpConnection * connection,
 {
   GstRtmpChunk *chunk;
 
+  if (connection->thread != g_thread_self()) {
+    GST_ERROR("Called from wrong thread");
+  }
   chunk = gst_rtmp_chunk_new ();
   chunk->chunk_stream_id = chunk_stream_id;
   chunk->timestamp = 0;         /* FIXME */

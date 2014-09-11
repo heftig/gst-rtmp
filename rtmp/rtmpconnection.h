@@ -49,6 +49,7 @@ struct _GstRtmpConnection
   gboolean closed;
 
   /* private */
+  GThread *thread;
   GSocketConnection *connection;
   GCancellable *cancellable;
   int state;
