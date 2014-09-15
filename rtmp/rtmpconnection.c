@@ -271,17 +271,17 @@ gst_rtmp_connection_close (GstRtmpConnection * connection)
 
 }
 
-static void
-gst_rtmp_connection_start_output (GstRtmpConnection * sc)
+static gboolean
+start_output (gpointer user_priv)
 {
+  GstRtmpConnection *sc = GST_RTMP_CONNECTION (user_priv);
   GOutputStream *os;
 
   if (!sc->handshake_complete)
-    return;
+    return G_SOURCE_REMOVE;
 
-  /* FIXME needs mutex */
   if (sc->output_source)
-    return;
+    return G_SOURCE_REMOVE;
 
   os = g_io_stream_get_output_stream (G_IO_STREAM (sc->connection));
   sc->output_source =
@@ -290,6 +290,18 @@ gst_rtmp_connection_start_output (GstRtmpConnection * sc)
   g_source_set_callback (sc->output_source,
       (GSourceFunc) gst_rtmp_connection_output_ready, sc, NULL);
   g_source_attach (sc->output_source, sc->main_context);
+
+  return G_SOURCE_REMOVE;
+}
+
+static void
+gst_rtmp_connection_start_output (GstRtmpConnection * sc)
+{
+  GSource *source;
+
+  source = g_idle_source_new ();
+  g_source_set_callback (source, start_output, sc, NULL);
+  g_source_attach (source, sc->main_context);
 }
 
 static gboolean
