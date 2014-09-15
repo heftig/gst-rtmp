@@ -54,9 +54,10 @@ struct _GstRtmpConnection
   GCancellable *cancellable;
   int state;
   GSocketClient *socket_client;
-  GQueue *output_queue;
+  GAsyncQueue *output_queue;
   GSimpleAsyncResult *async;
   gboolean writing;
+  GMainContext *output_main_context;
 
   GSource *input_source;
   GSource *output_source;
