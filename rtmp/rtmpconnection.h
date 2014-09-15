@@ -57,7 +57,7 @@ struct _GstRtmpConnection
   GAsyncQueue *output_queue;
   GSimpleAsyncResult *async;
   gboolean writing;
-  GMainContext *output_main_context;
+  GMainContext *main_context;
 
   GSource *input_source;
   GSource *output_source;

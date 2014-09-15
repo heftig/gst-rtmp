@@ -235,6 +235,7 @@ gst_rtmp_connection_set_socket_connection (GstRtmpConnection * sc,
   GInputStream *is;
 
   sc->thread = g_thread_self ();
+  sc->main_context = g_main_context_ref_thread_default ();
   sc->connection = connection;
 
   /* refs the socket because it's creating an input stream, which holds a ref */
@@ -245,7 +246,7 @@ gst_rtmp_connection_set_socket_connection (GstRtmpConnection * sc,
       sc->cancellable);
   g_source_set_callback (sc->input_source,
       (GSourceFunc) gst_rtmp_connection_input_ready, sc, NULL);
-  g_source_attach (sc->input_source, NULL);
+  g_source_attach (sc->input_source, sc->main_context);
 }
 
 void
@@ -288,7 +289,7 @@ gst_rtmp_connection_start_output (GstRtmpConnection * sc)
       sc->cancellable);
   g_source_set_callback (sc->output_source,
       (GSourceFunc) gst_rtmp_connection_output_ready, sc, NULL);
-  g_source_attach (sc->output_source, sc->output_main_context);
+  g_source_attach (sc->output_source, sc->main_context);
 }
 
 static gboolean
@@ -300,6 +301,9 @@ gst_rtmp_connection_input_ready (GInputStream * is, gpointer user_data)
   GError *error = NULL;
 
   GST_DEBUG ("input ready");
+  if (sc->thread != g_thread_self ()) {
+    GST_ERROR ("input_ready: Called from wrong thread");
+  }
 
   data = g_malloc (4096);
   ret =
@@ -363,6 +367,9 @@ gst_rtmp_connection_output_ready (GOutputStream * os, gpointer user_data)
   gsize size;
 
   GST_DEBUG ("output ready");
+  if (sc->thread != g_thread_self ()) {
+    GST_ERROR ("input_ready: Called from wrong thread");
+  }
 
   sc->output_source = NULL;
 
@@ -952,7 +959,6 @@ gst_rtmp_connection_client_handshake2_done (GObject * obj,
         gst_rtmp_connection_chunk_callback, 0);
   }
 
-  sc->output_main_context = g_main_context_ref_thread_default ();
   gst_rtmp_connection_start_output (sc);
 }
 
