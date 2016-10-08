@@ -1,9 +1,5 @@
 
 lib_LTLIBRARIES = libgstrtmp-@GST_API_VERSION@.la
-if ENABLE_STATIC_LIB
-noinst_LTLIBRARIES = libgstrtmp.la
-endif
-
 
 gstrtmp_@GST_API_VERSION@_includedir = $(includedir)/gstreamer-@GST_API_VERSION@/rtmp
 
@@ -19,14 +15,6 @@ libgstrtmp_@GST_API_VERSION@_la_LDFLAGS = \
 	-no-undefined -export-symbols-regex 'gst_'
 libgstrtmp_@GST_API_VERSION@_la_SOURCES = \
 	$(sources)
-
-libgstrtmp_la_CFLAGS = \
-	$(GST_RTMP_CFLAGS) \
-	$(GST_CFLAGS)
-libgstrtmp_la_LIBS = \
-	$(GST_LIBS) \
-	$(SOUP_LIBS)
-libgstrtmp_la_SOURCES = $(sources)
 
 sources = \
 	amf.c \
